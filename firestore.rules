@@ -1,0 +1,275 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function currentRole() {
+      return currentUser().role;
+    }
+
+    function currentCompanyId() {
+      return currentUser().companyId;
+    }
+
+    function isOwnerRole() {
+      return isSignedIn() && currentRole() == "owner";
+    }
+
+    function isAdminRole() {
+      return isSignedIn() && currentRole() == "admin";
+    }
+
+    function isSalesRole() {
+      return isSignedIn() && currentRole() == "sales";
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidRole(role) {
+      return role == "owner" || role == "admin" || role == "sales";
+    }
+
+    function isValidUserStatus(status) {
+      return status == "active" || status == "inactive";
+    }
+
+    function isValidCompanyStatus(status) {
+      return status == "active" || status == "inactive" || status == "suspended";
+    }
+
+    function isValidCompanyPlan(plan) {
+      return plan == "standard" || plan == "pro" || plan == "enterprise";
+    }
+
+    function sameCompany(companyId) {
+      return isSignedIn() && companyId is string && companyId == currentCompanyId();
+    }
+
+    function canReadCompanyData(companyId) {
+      return isOwnerRole() || sameCompany(companyId);
+    }
+
+    function canAdminCompanyData(companyId) {
+      return isOwnerRole() || (isAdminRole() && sameCompany(companyId));
+    }
+
+    function isKnowledgeCategoryCounterUpdate() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["knowledgeCount", "memoCount", "updatedAt"])
+        && request.resource.data.knowledgeCount is int
+        && request.resource.data.memoCount is int;
+    }
+
+    function isKnowledgeProductCounterUpdate() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["knowledgeCount", "updatedAt"])
+        && request.resource.data.knowledgeCount is int;
+    }
+
+    function isKnowledgeProductTabsUpdate() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["tabs", "updatedAt"])
+        && request.resource.data.tabs is list;
+    }
+
+    match /companies/{companyId} {
+      allow read: if isOwnerRole() || sameCompany(companyId);
+      allow create: if isSignedIn()
+        && request.resource.data.companyName is string
+        && isValidCompanyPlan(request.resource.data.plan)
+        && isValidCompanyStatus(request.resource.data.status);
+      allow update: if isOwnerRole()
+        && (!("plan" in request.resource.data) || isValidCompanyPlan(request.resource.data.plan))
+        && (!("status" in request.resource.data) || isValidCompanyStatus(request.resource.data.status));
+      allow delete: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwnerRole() || isSelf(userId) || (isAdminRole() && sameCompany(resource.data.companyId));
+      allow create: if (
+          isSelf(userId)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.companyId is string
+          && isValidRole(request.resource.data.role)
+          && isValidUserStatus(request.resource.data.status)
+        )
+        || (
+          isOwnerRole()
+          && request.resource.data.uid == userId
+          && request.resource.data.companyId is string
+          && (request.resource.data.role == "admin" || request.resource.data.role == "sales")
+          && isValidUserStatus(request.resource.data.status)
+        )
+        || (
+          isAdminRole()
+          && request.resource.data.uid == userId
+          && request.resource.data.companyId == currentCompanyId()
+          && request.resource.data.role == "sales"
+          && isValidUserStatus(request.resource.data.status)
+        );
+      allow update: if isOwnerRole()
+        || (
+          isAdminRole()
+          && sameCompany(resource.data.companyId)
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.role != "owner"
+        )
+        || (
+          isSelf(userId)
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.email == resource.data.email
+        );
+      allow delete: if false;
+
+      match /knowledgeSearchHistory/{historyId} {
+        allow read: if isOwnerRole() || isSelf(userId);
+        allow write: if isSelf(userId);
+      }
+    }
+
+    match /meetings/{meetingId} {
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && sameCompany(request.resource.data.companyId);
+      allow update: if canAdminCompanyData(resource.data.companyId) || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId));
+      allow delete: if false;
+
+      match /{subcollection}/{documentId} {
+        allow read: if canReadCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
+        allow write: if canAdminCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
+      }
+    }
+
+    match /meetingOutcomeHistory/{historyId} {
+      allow read, write: if isOwnerRole() || isAdminRole();
+    }
+
+    match /monthlyStats/{month} {
+      allow read: if isOwnerRole() || isAdminRole();
+      allow write: if isOwnerRole() || isAdminRole();
+    }
+
+    match /userMonthlyStats/{documentId} {
+      allow read: if isOwnerRole() || isAdminRole() || isSelf(resource.data.userId);
+      allow write: if isOwnerRole() || isAdminRole();
+    }
+
+    match /manualChecklists/{checklistId} {
+      allow read: if isSignedIn();
+      allow write: if isOwnerRole() || isAdminRole();
+    }
+
+    match /knowledgeCategories/{categoryId} {
+      allow read: if canReadCompanyData(resource.data.companyId);
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && sameCompany(request.resource.data.companyId);
+      allow update: if canAdminCompanyData(resource.data.companyId)
+        || (resource.data.createdBy == request.auth.uid && sameCompany(resource.data.companyId))
+        || isKnowledgeCategoryCounterUpdate();
+      allow delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
+    match /knowledgeProducts/{productId} {
+      allow read: if canReadCompanyData(resource.data.companyId);
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && sameCompany(request.resource.data.companyId);
+      allow update: if canAdminCompanyData(resource.data.companyId)
+        || (resource.data.createdBy == request.auth.uid && sameCompany(resource.data.companyId))
+        || isKnowledgeProductCounterUpdate()
+        || isKnowledgeProductTabsUpdate();
+      allow delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
+    match /knowledgeItems/{knowledgeId} {
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && (resource.data.scope == "shared" || resource.data.ownerId == request.auth.uid || isAdminRole() || isOwnerRole());
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && sameCompany(request.resource.data.companyId)
+        && (request.resource.data.scope == "personal" || isAdminRole() || isOwnerRole());
+      allow update: if canAdminCompanyData(resource.data.companyId)
+        || (
+          resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.scope == "personal"
+        );
+      allow delete: if canAdminCompanyData(resource.data.companyId) || resource.data.ownerId == request.auth.uid;
+    }
+
+    match /roleplayScenarios/{scenarioId} {
+      allow read: if canReadCompanyData(resource.data.companyId);
+      allow create: if canAdminCompanyData(request.resource.data.companyId)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
+    match /roleplayResults/{resultId} {
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && sameCompany(request.resource.data.companyId);
+      allow update, delete: if false;
+    }
+
+    match /systemErrors/{errorId} {
+      allow read, update: if isOwnerRole();
+      allow create: if isOwnerRole() || (isSignedIn() && (!("companyId" in request.resource.data) || sameCompany(request.resource.data.companyId)));
+      allow delete: if false;
+    }
+
+    match /aiUsageLogs/{logId} {
+      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
+      allow create: if isOwnerRole() || (isSignedIn() && sameCompany(request.resource.data.companyId));
+      allow update, delete: if false;
+    }
+
+    match /knowledgeSearchEvents/{eventId} {
+      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
+      allow create: if isOwnerRole() || (
+        isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && sameCompany(request.resource.data.companyId)
+      );
+      allow update, delete: if false;
+    }
+
+    match /audioProcessingJobs/{jobId} {
+      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
+      allow create, update: if isOwnerRole() || (isSignedIn() && sameCompany(request.resource.data.companyId));
+      allow delete: if false;
+    }
+
+    match /aiPrompts/{promptId} {
+      allow read, create, update: if isOwnerRole();
+      allow delete: if false;
+    }
+
+    match /featureFlags/{flagId} {
+      allow read, create, update: if isOwnerRole();
+      allow delete: if false;
+    }
+
+    match /announcements/{announcementId} {
+      allow read, create, update: if isOwnerRole();
+      allow delete: if false;
+    }
+  }
+}

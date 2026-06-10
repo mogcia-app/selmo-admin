@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --ink: #16140f;
+  --paper: #ffffff;
+  --paper-2: #f6f5f1;
+  --paper-3: #e8e5dc;
+  --line: #2a261c;
+  --line-soft: #d8d3c4;
+  --accent: #b8331f;
+  --accent-2: #c8941f;
+  --green: #2d5a3d;
+  --gray: #8a8273;
+  --gray-2: #524c3f;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.font-mono-ui {
+  font-family: "SFMono-Regular", "JetBrains Mono", "Menlo", "Consolas", monospace;
+  font-feature-settings: "tnum";
+}
+
+.always-visible-scrollbar {
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: #ffcf33 #fff4d6;
+}
+
+.always-visible-scrollbar::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.always-visible-scrollbar::-webkit-scrollbar-track {
+  background: #fff4d6;
+  border-radius: 999px;
+}
+
+.always-visible-scrollbar::-webkit-scrollbar-thumb {
+  background: #ffcf33;
+  border: 2px solid #fff4d6;
+  border-radius: 999px;
+}
+
+.always-visible-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #f5bd07;
+}
+
+@keyframes transcription-bar-shimmer {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: translateX(220%);
+    opacity: 0;
+  }
+}
+
+@keyframes transcription-bar-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 207, 51, 0.18);
+  }
+
+  50% {
+    box-shadow: 0 0 18px rgba(255, 207, 51, 0.32);
+  }
+}
+
+.transcription-bar-active {
+  animation: transcription-bar-pulse 1.8s ease-in-out infinite;
+}
+
+.transcription-bar-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 36%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 245, 200, 0.55) 45%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: transcription-bar-shimmer 1.5s linear infinite;
+}
+
+[data-owner-console] .overflow-x-auto {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #f5bd07 #fff7dd;
+}
+
+[data-owner-console] .overflow-x-auto::-webkit-scrollbar {
+  height: 10px;
+}
+
+[data-owner-console] .overflow-x-auto::-webkit-scrollbar-track {
+  background: #fff7dd;
+}
+
+[data-owner-console] .overflow-x-auto::-webkit-scrollbar-thumb {
+  background: #f5bd07;
+  border: 2px solid #fff7dd;
+  border-radius: 999px;
+}
+
+[data-owner-console] table {
+  border-spacing: 0;
+}
+
+[data-owner-console] thead tr {
+  background: #fff9e8;
+}
+
+[data-owner-console] th {
+  white-space: nowrap;
+}
+
+[data-owner-console] tbody tr {
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+[data-owner-console] tbody tr:hover {
+  background: #fffdf4;
+}

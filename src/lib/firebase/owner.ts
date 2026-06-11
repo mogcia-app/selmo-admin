@@ -16,6 +16,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 
+import { writeAdminAuditLogSafely } from "@/lib/firebase/audit";
 import { assertFirebaseClient } from "@/lib/firebase/client";
 import type { CompanyPlan, CompanyStatus, UserRole, UserStatus } from "@/types/domain";
 
@@ -177,6 +178,20 @@ export async function createCompany(input: {
     updatedAt: serverTimestamp(),
   });
 
+  writeAdminAuditLogSafely({
+    action: "company.create",
+    targetType: "company",
+    targetId: companyRef.id,
+    companyId: companyRef.id,
+    metadata: {
+      companyName: input.companyName,
+      plan: input.plan,
+      status: input.status,
+      monthlyTranscriptionQuota: input.monthlyTranscriptionQuota ?? defaultQuota,
+      monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultQuota,
+    },
+  });
+
   return companyRef.id;
 }
 
@@ -189,6 +204,14 @@ export async function updateCompany(
   await updateDoc(doc(firestore, "companies", companyId), {
     ...input,
     updatedAt: serverTimestamp(),
+  });
+
+  writeAdminAuditLogSafely({
+    action: "company.update",
+    targetType: "company",
+    targetId: companyId,
+    companyId,
+    metadata: input,
   });
 }
 
@@ -220,6 +243,14 @@ export async function updateCompanyFeatureFlags(
     },
     { merge: true },
   );
+
+  writeAdminAuditLogSafely({
+    action: "feature_flags.update",
+    targetType: "featureFlags",
+    targetId: companyId,
+    companyId,
+    metadata: input,
+  });
 }
 
 export function subscribeToAnnouncements(
@@ -244,6 +275,18 @@ export async function createAnnouncement(input: Omit<AnnouncementRecord, "id" | 
     endsAt: input.endsAt ? Timestamp.fromDate(input.endsAt) : null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+  }).then((announcementRef) => {
+    writeAdminAuditLogSafely({
+      action: "announcement.create",
+      targetType: "announcement",
+      targetId: announcementRef.id,
+      metadata: {
+        title: input.title,
+        target: input.target,
+        status: input.status,
+        kind: input.kind,
+      },
+    });
   });
 }
 
@@ -258,6 +301,13 @@ export async function updateAnnouncement(
     ...(input.startsAt !== undefined ? { startsAt: input.startsAt ? Timestamp.fromDate(input.startsAt) : null } : {}),
     ...(input.endsAt !== undefined ? { endsAt: input.endsAt ? Timestamp.fromDate(input.endsAt) : null } : {}),
     updatedAt: serverTimestamp(),
+  });
+
+  writeAdminAuditLogSafely({
+    action: "announcement.update",
+    targetType: "announcement",
+    targetId: announcementId,
+    metadata: input,
   });
 }
 
@@ -381,6 +431,18 @@ export async function saveAiPrompt(input: Omit<AiPromptRecord, "id" | "updatedAt
     { merge: true },
   );
 
+  writeAdminAuditLogSafely({
+    action: input.id ? "ai_prompt.update" : "ai_prompt.create",
+    targetType: "aiPrompt",
+    targetId: promptRef.id,
+    metadata: {
+      promptType: input.promptType,
+      title: input.title,
+      version: input.version,
+      isActive: input.isActive,
+    },
+  });
+
   return promptRef.id;
 }
 
@@ -398,6 +460,14 @@ export async function updateUserByOwner(
   await updateDoc(doc(firestore, "users", uid), {
     ...input,
     updatedAt: serverTimestamp(),
+  });
+
+  writeAdminAuditLogSafely({
+    action: "user.update",
+    targetType: "user",
+    targetId: uid,
+    companyId: input.companyId ?? null,
+    metadata: input,
   });
 }
 

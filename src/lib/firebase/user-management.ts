@@ -2,6 +2,7 @@
 
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 
+import { writeAdminAuditLogSafely } from "@/lib/firebase/audit";
 import { assertFirebaseClient, firebaseAuth } from "@/lib/firebase/client";
 import type { UserRole } from "@/types/domain";
 
@@ -40,11 +41,26 @@ export async function createTenantUser(input: CreateTenantUserInput) {
     throw new Error("作成されたユーザーIDを取得できませんでした。");
   }
 
+  writeAdminAuditLogSafely({
+    action: "user.create",
+    targetType: "user",
+    targetId: data.uid,
+    companyId: input.companyId,
+    metadata: {
+      role: input.role,
+      email: input.email,
+      name: input.name,
+      workExperienceYears: input.workExperienceYears ?? null,
+      workExperienceMonths: input.workExperienceMonths ?? null,
+    },
+  });
+
   return data.uid;
 }
 
 export async function updateSalesWorkExperience(input: {
   uid: string;
+  companyId?: string | null;
   years: number;
   months: number;
 }) {
@@ -55,5 +71,16 @@ export async function updateSalesWorkExperience(input: {
     workExperienceMonths: input.months,
     workExperienceLocked: true,
     updatedAt: serverTimestamp(),
+  });
+
+  writeAdminAuditLogSafely({
+    action: "user.work_experience.update",
+    targetType: "user",
+    targetId: input.uid,
+    companyId: input.companyId ?? null,
+    metadata: {
+      workExperienceYears: input.years,
+      workExperienceMonths: input.months,
+    },
   });
 }

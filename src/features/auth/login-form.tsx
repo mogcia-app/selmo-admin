@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { recordLoginFailure } from "@/lib/firebase/auth";
 import { useAuth } from "@/features/auth/auth-provider";
 
 const errorMessageMap: Record<string, string> = {
@@ -47,6 +48,7 @@ export function LoginForm({
     }
 
     if (isOwner && email.trim().toLowerCase() !== ownerLoginEmail) {
+      void recordLoginFailure({ email, reason: "owner_email_not_allowed", variant });
       setErrorMessage("この運営管理画面にログインできるアカウントではありません。");
       return;
     }
@@ -55,6 +57,7 @@ export function LoginForm({
       const nextProfile = await signIn(email, password);
       if (isOwner && (nextProfile?.email?.toLowerCase() !== ownerLoginEmail || nextProfile.role !== "owner")) {
         await signOut();
+        void recordLoginFailure({ email, reason: "owner_role_not_allowed", variant });
         setErrorMessage("この運営管理画面にログインできるアカウントではありません。");
         return;
       }
@@ -71,10 +74,12 @@ export function LoginForm({
       router.replace(nextPath || fallbackPath);
     } catch (error) {
       if (error instanceof FirebaseError) {
+        void recordLoginFailure({ email, reason: error.code, variant });
         setErrorMessage(errorMessageMap[error.code] ?? "ログインに失敗しました。設定とアカウントを確認してください。");
         return;
       }
 
+      void recordLoginFailure({ email, reason: "unknown", variant });
       setErrorMessage("ログインに失敗しました。時間を置いて再度お試しください。");
     }
   }

@@ -10,12 +10,14 @@ import {
   type User,
 } from "firebase/auth";
 import {
+  addDoc,
   collection,
   doc,
   getDoc,
   onSnapshot,
   serverTimestamp,
   setDoc,
+  updateDoc,
   type FirestoreError,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -56,20 +58,39 @@ export async function signInWithEmail(email: string, password: string) {
   await enableAuthPersistence();
 
   const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
-  await setDoc(
-    doc(firestore, "users", credential.user.uid),
-    {
-      lastLoginAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  await updateDoc(doc(firestore, "users", credential.user.uid), {
+    lastLoginAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
   const profile = await fetchUserProfile(credential.user.uid);
+  await recordLoginEvent({
+    status: "success",
+    uid: credential.user.uid,
+    email,
+    role: profile?.role ?? null,
+    companyId: profile?.companyId ?? null,
+  });
 
   return {
     credential,
     profile,
   };
+}
+
+export async function recordLoginFailure(input: {
+  email: string;
+  reason: string;
+  variant: "default" | "admin" | "owner";
+}) {
+  await recordLoginEvent({
+    status: "failed",
+    uid: null,
+    email: input.email,
+    role: null,
+    companyId: null,
+    reason: input.reason,
+    variant: input.variant,
+  });
 }
 
 export async function registerUser({
@@ -236,4 +257,27 @@ function toDate(value: { toDate?: () => Date } | undefined) {
 
 function readNullableNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+async function recordLoginEvent(input: {
+  status: "success" | "failed";
+  uid: string | null;
+  email: string;
+  role: UserRole | null;
+  companyId: string | null;
+  reason?: string;
+  variant?: "default" | "admin" | "owner";
+}) {
+  const { firestore } = assertFirebaseClient();
+
+  await addDoc(collection(firestore, "loginEvents"), {
+    uid: input.uid,
+    email: input.email.trim().toLowerCase(),
+    role: input.role,
+    companyId: input.companyId,
+    status: input.status,
+    reason: input.reason ?? null,
+    variant: input.variant ?? null,
+    createdAt: serverTimestamp(),
+  });
 }

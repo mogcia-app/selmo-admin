@@ -899,6 +899,7 @@ function UserAdminRow({ user, companies }: { user: AppUserProfile; companies: Co
     try {
       await updateSalesWorkExperience({
         uid: user.uid,
+        companyId: user.companyId,
         years: parsed.value.years,
         months: parsed.value.months,
       });

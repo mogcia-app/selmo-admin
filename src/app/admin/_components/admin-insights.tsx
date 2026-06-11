@@ -124,7 +124,7 @@ export function buildMemberRows(users: AppUserProfile[], meetings: MeetingRecord
       winRate,
       averageScore,
       roleplayCount: userResults.length,
-      lastLogin: "集計準備中",
+      lastLogin: formatDateTime(user.lastLoginAt),
       tone,
       guidance: tone === "risk" ? "失注理由とロープレ課題を確認" : tone === "good" ? "好事例として共有候補" : "商談ログを確認",
     };

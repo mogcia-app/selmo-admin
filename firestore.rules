@@ -235,6 +235,47 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /loginEvents/{eventId} {
+      allow read: if isOwnerRole();
+      allow create: if request.resource.data.email is string
+        && request.resource.data.status in ["success", "failed"]
+        && request.resource.data.createdAt is timestamp
+        && (
+          (
+            request.resource.data.status == "failed"
+            && request.resource.data.uid == null
+          )
+          || (
+            isSignedIn()
+            && request.resource.data.status == "success"
+            && request.resource.data.uid == request.auth.uid
+          )
+        );
+      allow update, delete: if false;
+    }
+
+    match /adminAuditLogs/{logId} {
+      allow read: if isOwnerRole()
+        || (
+          isAdminRole()
+          && (
+            resource.data.actorId == request.auth.uid
+            || sameCompany(resource.data.companyId)
+          )
+        );
+      allow create: if (isOwnerRole() || isAdminRole())
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.action is string
+        && request.resource.data.targetType is string
+        && request.resource.data.targetId is string
+        && request.resource.data.createdAt is timestamp
+        && (
+          isOwnerRole()
+          || sameCompany(request.resource.data.companyId)
+        );
+      allow update, delete: if false;
+    }
+
     match /aiUsageLogs/{logId} {
       allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
       allow create: if isOwnerRole() || (isSignedIn() && sameCompany(request.resource.data.companyId));

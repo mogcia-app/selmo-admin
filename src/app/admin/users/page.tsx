@@ -72,6 +72,7 @@ function UserTable({
     name: string | null;
     email: string | null;
     role: string;
+    companyId: string | null;
     status: "active" | "inactive";
     workExperienceYears: number | null;
     workExperienceMonths: number | null;
@@ -114,6 +115,7 @@ function UserRow({
     name: string | null;
     email: string | null;
     role: string;
+    companyId: string | null;
     status: "active" | "inactive";
     workExperienceYears: number | null;
     workExperienceMonths: number | null;
@@ -140,6 +142,7 @@ function UserRow({
     try {
       await updateSalesWorkExperience({
         uid: user.uid,
+        companyId: user.companyId,
         years: parsed.value.years,
         months: parsed.value.months,
       });

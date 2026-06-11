@@ -199,6 +199,40 @@ type AiChargeEventDocument = {
 };
 ```
 
+### `loginEvents/{eventId}`
+
+ログイン成功・失敗を記録します。成功時は `uid` とユーザー属性を入れ、失敗時は未認証のため `uid: null` と失敗理由を残します。
+
+```ts
+type LoginEventDocument = {
+  uid: string | null;
+  email: string;
+  role: "owner" | "admin" | "sales" | null;
+  companyId: string | null;
+  status: "success" | "failed";
+  reason: string | null;
+  variant: "default" | "admin" | "owner" | null;
+  createdAt: Timestamp;
+};
+```
+
+### `adminAuditLogs/{logId}`
+
+管理画面からの会社設定、ユーザー、勤務年数、機能フラグ、告知、プロンプト変更を記録します。
+
+```ts
+type AdminAuditLogDocument = {
+  actorId: string;
+  actorEmail: string | null;
+  action: string;
+  targetType: string;
+  targetId: string;
+  companyId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: Timestamp;
+};
+```
+
 ### `manualChecklists/{checklistId}`
 
 ```ts

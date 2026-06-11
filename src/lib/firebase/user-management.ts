@@ -1,6 +1,8 @@
 "use client";
 
-import { firebaseAuth } from "@/lib/firebase/client";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+
+import { assertFirebaseClient, firebaseAuth } from "@/lib/firebase/client";
 import type { UserRole } from "@/types/domain";
 
 export type CreateTenantUserInput = {
@@ -9,6 +11,8 @@ export type CreateTenantUserInput = {
   name: string;
   email: string;
   password: string;
+  workExperienceYears?: number | null;
+  workExperienceMonths?: number | null;
 };
 
 export async function createTenantUser(input: CreateTenantUserInput) {
@@ -37,4 +41,19 @@ export async function createTenantUser(input: CreateTenantUserInput) {
   }
 
   return data.uid;
+}
+
+export async function updateSalesWorkExperience(input: {
+  uid: string;
+  years: number;
+  months: number;
+}) {
+  const { firestore } = assertFirebaseClient();
+
+  await updateDoc(doc(firestore, "users", input.uid), {
+    workExperienceYears: input.years,
+    workExperienceMonths: input.months,
+    workExperienceLocked: true,
+    updatedAt: serverTimestamp(),
+  });
 }

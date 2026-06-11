@@ -37,7 +37,7 @@ import {
   type SystemErrorRecord,
 } from "@/lib/firebase/owner";
 import { subscribeToRoleplayResults, type RoleplayResult } from "@/lib/firebase/roleplay";
-import { createTenantUser } from "@/lib/firebase/user-management";
+import { createTenantUser, updateSalesWorkExperience } from "@/lib/firebase/user-management";
 import type { CompanyPlan, CompanyStatus, UserRole, UserStatus } from "@/types/domain";
 
 type OwnerData = {
@@ -346,12 +346,13 @@ export function OwnerUsers() {
           />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse">
+          <table className="w-full min-w-[980px] border-collapse">
             <thead>
               <tr className="border-b border-[#e6e9ef] text-left text-[12px] font-bold text-[#7a808c]">
                 <th className="px-3 py-3">ユーザー</th>
                 <th className="px-3 py-3">会社</th>
                 <th className="px-3 py-3">Role</th>
+                <th className="px-3 py-3">勤務年数</th>
                 <th className="px-3 py-3">Status</th>
                 <th className="px-3 py-3">最終ログイン</th>
               </tr>
@@ -871,12 +872,42 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
 function UserAdminRow({ user, companies }: { user: AppUserProfile; companies: CompanyRecord[] }) {
   const [role, setRole] = useState<UserRole>(user.role);
   const [status, setStatus] = useState<UserStatus>(user.status);
+  const [experienceYears, setExperienceYears] = useState(user.workExperienceYears?.toString() ?? "");
+  const [experienceMonths, setExperienceMonths] = useState(user.workExperienceMonths?.toString() ?? "");
+  const [experienceError, setExperienceError] = useState<string | null>(null);
+  const [isSavingExperience, setIsSavingExperience] = useState(false);
   const company = companies.find((item) => item.id === user.companyId);
 
   useEffect(() => {
     setRole(user.role);
     setStatus(user.status);
-  }, [user.role, user.status]);
+    setExperienceYears(user.workExperienceYears?.toString() ?? "");
+    setExperienceMonths(user.workExperienceMonths?.toString() ?? "");
+  }, [user.role, user.status, user.workExperienceMonths, user.workExperienceYears]);
+
+  async function saveExperience() {
+    const parsed = parseWorkExperience(experienceYears, experienceMonths);
+
+    if (!parsed.ok) {
+      setExperienceError(parsed.error);
+      return;
+    }
+
+    setExperienceError(null);
+    setIsSavingExperience(true);
+
+    try {
+      await updateSalesWorkExperience({
+        uid: user.uid,
+        years: parsed.value.years,
+        months: parsed.value.months,
+      });
+    } catch (error) {
+      setExperienceError(error instanceof Error ? error.message : "勤務年数の保存に失敗しました。");
+    } finally {
+      setIsSavingExperience(false);
+    }
+  }
 
   return (
     <tr className="border-b border-[#eef1f5] text-[13px]">
@@ -895,6 +926,49 @@ function UserAdminRow({ user, companies }: { user: AppUserProfile; companies: Co
           }}
           options={roleOptions}
         />
+      </td>
+      <td className="px-3 py-4 text-[#343b48]">
+        {user.role !== "sales" ? (
+          <span className="text-[#8a909b]">対象外</span>
+        ) : user.workExperienceLocked ? (
+          <span className="font-bold text-[#20242c]">{formatWorkExperience(user.workExperienceYears, user.workExperienceMonths)}</span>
+        ) : (
+          <div className="grid min-w-[210px] gap-1">
+            <div className="flex items-center gap-2">
+              <input
+                value={experienceYears}
+                onChange={(event) => {
+                  setExperienceYears(event.target.value);
+                  setExperienceError(null);
+                }}
+                inputMode="numeric"
+                className="w-[72px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400]"
+                aria-label={`${user.name ?? user.email ?? user.uid} 勤務年数 年`}
+              />
+              <span className="text-[12px] font-bold text-[#7a808c]">年</span>
+              <input
+                value={experienceMonths}
+                onChange={(event) => {
+                  setExperienceMonths(event.target.value);
+                  setExperienceError(null);
+                }}
+                inputMode="numeric"
+                className="w-[64px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400]"
+                aria-label={`${user.name ?? user.email ?? user.uid} 勤務年数 月`}
+              />
+              <span className="text-[12px] font-bold text-[#7a808c]">ヶ月</span>
+              <button
+                type="button"
+                onClick={() => void saveExperience()}
+                disabled={isSavingExperience}
+                className="rounded-[8px] bg-[#20242c] px-3 py-2 text-[12px] font-bold text-white disabled:opacity-50"
+              >
+                {isSavingExperience ? "保存中" : "保存"}
+              </button>
+            </div>
+            {experienceError ? <span className="text-[11px] font-bold text-red-700">{experienceError}</span> : null}
+          </div>
+        )}
       </td>
       <td className="px-3 py-4">
         <InlineSelect
@@ -1546,6 +1620,8 @@ function TenantUserDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [workExperienceYears, setWorkExperienceYears] = useState("");
+  const [workExperienceMonths, setWorkExperienceMonths] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -1558,6 +1634,13 @@ function TenantUserDialog({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    const workExperience = role === "sales" ? parseWorkExperience(workExperienceYears, workExperienceMonths) : null;
+
+    if (workExperience && !workExperience.ok) {
+      setError(workExperience.error);
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -1567,6 +1650,8 @@ function TenantUserDialog({
         name,
         email,
         password,
+        workExperienceYears: workExperience?.ok ? workExperience.value.years : null,
+        workExperienceMonths: workExperience?.ok ? workExperience.value.months : null,
       });
       onClose();
     } catch (nextError) {
@@ -1603,6 +1688,12 @@ function TenantUserDialog({
           <Field label="名前" value={name} onChange={setName} placeholder="山田 太郎" />
           <Field label="メールアドレス" value={email} onChange={setEmail} placeholder="taro@example.com" />
           <Field label="初期パスワード" value={password} onChange={setPassword} placeholder="6文字以上" type="password" />
+          {role === "sales" ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="勤務年数（年）" value={workExperienceYears} onChange={setWorkExperienceYears} placeholder="例: 3" type="number" />
+              <Field label="勤務年数（月）" value={workExperienceMonths} onChange={setWorkExperienceMonths} placeholder="0〜11" type="number" />
+            </div>
+          ) : null}
           {error ? <div className="border border-red-200 bg-red-50 px-4 py-3 text-[13px] font-bold text-red-700">{error}</div> : null}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="rounded-[8px] border border-[#eadfbc] bg-white px-4 py-3 text-[13px] font-bold text-[#343b48] transition hover:bg-[#fff8e4]">キャンセル</button>
@@ -2248,6 +2339,19 @@ function parseQuota(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : null;
 }
 
+function parseWorkExperience(yearsValue: string, monthsValue: string):
+  | { ok: true; value: { years: number; months: number } }
+  | { ok: false; error: string } {
+  const years = parseQuota(yearsValue);
+  const months = parseQuota(monthsValue);
+
+  if (years === null) return { ok: false, error: "勤務年数（年）を入力してください。" };
+  if (months === null) return { ok: false, error: "勤務年数（月）を入力してください。" };
+  if (months > 11) return { ok: false, error: "勤務年数の月は0〜11で入力してください。" };
+
+  return { ok: true, value: { years, months } };
+}
+
 function formatMinutes(durationSec: number) {
   if (!durationSec) return "0分";
   return `${Math.round(durationSec / 60)}分`;
@@ -2293,6 +2397,11 @@ function formatPlan(plan: CompanyPlan) {
 
 function formatQuota(value: number | null) {
   return value === null ? "要相談" : `${value}回`;
+}
+
+function formatWorkExperience(years: number | null, months: number | null) {
+  if (years === null || months === null) return "未設定";
+  return `${years}年${months}ヶ月`;
 }
 
 function formatChargePlan(plan: string) {

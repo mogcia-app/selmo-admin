@@ -11,7 +11,7 @@ import {
   useAdminInsights,
 } from "@/app/admin/_components/admin-insights";
 import { useAuth } from "@/features/auth/auth-provider";
-import { createTenantUser } from "@/lib/firebase/user-management";
+import { createTenantUser, updateSalesWorkExperience } from "@/lib/firebase/user-management";
 
 export default function AdminUsersPage() {
   const { profile } = useAuth();
@@ -73,6 +73,9 @@ function UserTable({
     email: string | null;
     role: string;
     status: "active" | "inactive";
+    workExperienceYears: number | null;
+    workExperienceMonths: number | null;
+    workExperienceLocked: boolean;
     lastLoginAt: Date | null;
   }>;
 }) {
@@ -82,31 +85,124 @@ function UserTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[620px] border-collapse">
+      <table className="w-full min-w-[820px] border-collapse">
         <thead>
           <tr className="border-b border-[#eef1f5] text-left text-[12px] font-bold text-[#7a808c]">
             <th className="px-3 py-3">名前</th>
             <th className="px-3 py-3">メール</th>
             <th className="px-3 py-3">権限</th>
+            <th className="px-3 py-3">勤務年数</th>
             <th className="px-3 py-3">状態</th>
             <th className="px-3 py-3">最終ログイン</th>
           </tr>
         </thead>
         <tbody>
           {users.map((user) => (
-            <tr key={user.uid} className="border-b border-[#eef1f5] text-[13px] last:border-b-0">
-              <td className="px-3 py-4 font-bold text-[#20242c]">{user.name ?? "未設定"}</td>
-              <td className="px-3 py-4 text-[#596273]">{user.email ?? "未設定"}</td>
-              <td className="px-3 py-4 text-[#596273]">{user.role}</td>
-              <td className="px-3 py-4">
-                <StatusBadge tone={user.status === "active" ? "good" : "normal"} label={user.status} />
-              </td>
-              <td className="px-3 py-4 text-[#7a808c]">{formatDateTime(user.lastLoginAt)}</td>
-            </tr>
+            <UserRow key={user.uid} user={user} />
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function UserRow({
+  user,
+}: {
+  user: {
+    uid: string;
+    name: string | null;
+    email: string | null;
+    role: string;
+    status: "active" | "inactive";
+    workExperienceYears: number | null;
+    workExperienceMonths: number | null;
+    workExperienceLocked: boolean;
+    lastLoginAt: Date | null;
+  };
+}) {
+  const [years, setYears] = useState(user.workExperienceYears?.toString() ?? "");
+  const [months, setMonths] = useState(user.workExperienceMonths?.toString() ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function handleSave() {
+    const parsed = parseWorkExperience(years, months);
+
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+
+    setError(null);
+    setIsSaving(true);
+
+    try {
+      await updateSalesWorkExperience({
+        uid: user.uid,
+        years: parsed.value.years,
+        months: parsed.value.months,
+      });
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "勤務年数の保存に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <tr className="border-b border-[#eef1f5] text-[13px] last:border-b-0">
+      <td className="px-3 py-4 font-bold text-[#20242c]">{user.name ?? "未設定"}</td>
+      <td className="px-3 py-4 text-[#596273]">{user.email ?? "未設定"}</td>
+      <td className="px-3 py-4 text-[#596273]">{user.role}</td>
+      <td className="px-3 py-4 text-[#596273]">
+        {user.role !== "sales" ? (
+          <span className="text-[#8a909b]">対象外</span>
+        ) : user.workExperienceLocked ? (
+          <span className="font-bold text-[#20242c]">{formatWorkExperience(user.workExperienceYears, user.workExperienceMonths)}</span>
+        ) : (
+          <div className="grid min-w-[210px] gap-1">
+            <div className="flex items-center gap-2">
+              <input
+                value={years}
+                onChange={(event) => {
+                  setYears(event.target.value);
+                  setError(null);
+                }}
+                inputMode="numeric"
+                className="w-[68px] rounded-[10px] border border-[#dfe4ec] bg-white px-3 py-2 text-[13px] font-bold outline-none focus:border-[#c8941f]"
+                aria-label={`${user.name ?? user.email ?? user.uid} 勤務年数 年`}
+              />
+              <span className="text-[12px] font-bold text-[#7a808c]">年</span>
+              <input
+                value={months}
+                onChange={(event) => {
+                  setMonths(event.target.value);
+                  setError(null);
+                }}
+                inputMode="numeric"
+                className="w-[60px] rounded-[10px] border border-[#dfe4ec] bg-white px-3 py-2 text-[13px] font-bold outline-none focus:border-[#c8941f]"
+                aria-label={`${user.name ?? user.email ?? user.uid} 勤務年数 月`}
+              />
+              <span className="text-[12px] font-bold text-[#7a808c]">ヶ月</span>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                className="rounded-[10px] bg-[#20242c] px-3 py-2 text-[12px] font-bold text-white disabled:opacity-50"
+              >
+                {isSaving ? "保存中" : "保存"}
+              </button>
+            </div>
+            {error ? <span className="text-[11px] font-bold text-red-700">{error}</span> : null}
+          </div>
+        )}
+      </td>
+      <td className="px-3 py-4">
+        <StatusBadge tone={user.status === "active" ? "good" : "normal"} label={user.status} />
+      </td>
+      <td className="px-3 py-4 text-[#7a808c]">{formatDateTime(user.lastLoginAt)}</td>
+    </tr>
   );
 }
 
@@ -120,12 +216,21 @@ function AdminSalesUserDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [workExperienceYears, setWorkExperienceYears] = useState("");
+  const [workExperienceMonths, setWorkExperienceMonths] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    const workExperience = parseWorkExperience(workExperienceYears, workExperienceMonths);
+
+    if (!workExperience.ok) {
+      setError(workExperience.error);
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -135,6 +240,8 @@ function AdminSalesUserDialog({
         name,
         email,
         password,
+        workExperienceYears: workExperience.value.years,
+        workExperienceMonths: workExperience.value.months,
       });
       onClose();
     } catch (nextError) {
@@ -158,6 +265,10 @@ function AdminSalesUserDialog({
           <DialogField label="名前" value={name} onChange={setName} placeholder="山田 太郎" />
           <DialogField label="メールアドレス" value={email} onChange={setEmail} placeholder="taro@example.com" />
           <DialogField label="初期パスワード" value={password} onChange={setPassword} placeholder="6文字以上" type="password" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DialogField label="勤務年数（年）" value={workExperienceYears} onChange={setWorkExperienceYears} placeholder="例: 3" type="number" />
+            <DialogField label="勤務年数（月）" value={workExperienceMonths} onChange={setWorkExperienceMonths} placeholder="0〜11" type="number" />
+          </div>
           {error ? <div className="rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-[13px] font-bold text-red-700">{error}</div> : null}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="rounded-[14px] border border-[#dfe4ec] bg-white px-4 py-3 text-[13px] font-bold text-[#343b48]">キャンセル</button>
@@ -206,4 +317,29 @@ function formatDateTime(date: Date | null) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function parseWorkExperience(yearsValue: string, monthsValue: string):
+  | { ok: true; value: { years: number; months: number } }
+  | { ok: false; error: string } {
+  const years = parseNonNegativeInteger(yearsValue);
+  const months = parseNonNegativeInteger(monthsValue);
+
+  if (years === null) return { ok: false, error: "勤務年数（年）を入力してください。" };
+  if (months === null) return { ok: false, error: "勤務年数（月）を入力してください。" };
+  if (months > 11) return { ok: false, error: "勤務年数の月は0〜11で入力してください。" };
+
+  return { ok: true, value: { years, months } };
+}
+
+function parseNonNegativeInteger(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function formatWorkExperience(years: number | null, months: number | null) {
+  if (years === null || months === null) return "未設定";
+  return `${years}年${months}ヶ月`;
 }

@@ -30,6 +30,9 @@ export type AppUserProfile = {
   companyId: string | null;
   role: UserRole;
   status: UserStatus;
+  workExperienceYears: number | null;
+  workExperienceMonths: number | null;
+  workExperienceLocked: boolean;
   createdAt: Date | null;
   lastLoginAt: Date | null;
 };
@@ -153,6 +156,9 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
     companyId?: string;
     role?: UserRole;
     status?: UserStatus;
+    workExperienceYears?: number;
+    workExperienceMonths?: number;
+    workExperienceLocked?: boolean;
     createdAt?: { toDate?: () => Date };
     lastLoginAt?: { toDate?: () => Date };
   };
@@ -168,6 +174,9 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
     companyId: data.companyId ?? null,
     role: data.role,
     status: data.status ?? "active",
+    workExperienceYears: readNullableNumber(data.workExperienceYears),
+    workExperienceMonths: readNullableNumber(data.workExperienceMonths),
+    workExperienceLocked: data.workExperienceLocked === true,
     createdAt: toDate(data.createdAt),
     lastLoginAt: toDate(data.lastLoginAt),
   };
@@ -191,6 +200,9 @@ export function subscribeToUserProfiles(
               companyId?: string;
               role?: UserRole;
               status?: UserStatus;
+              workExperienceYears?: number;
+              workExperienceMonths?: number;
+              workExperienceLocked?: boolean;
               createdAt?: { toDate?: () => Date };
               lastLoginAt?: { toDate?: () => Date };
             };
@@ -204,6 +216,9 @@ export function subscribeToUserProfiles(
               companyId: data.companyId ?? null,
               role: data.role,
               status: data.status ?? "active",
+              workExperienceYears: readNullableNumber(data.workExperienceYears),
+              workExperienceMonths: readNullableNumber(data.workExperienceMonths),
+              workExperienceLocked: data.workExperienceLocked === true,
               createdAt: toDate(data.createdAt),
               lastLoginAt: toDate(data.lastLoginAt),
             };
@@ -217,4 +232,8 @@ export function subscribeToUserProfiles(
 
 function toDate(value: { toDate?: () => Date } | undefined) {
   return typeof value?.toDate === "function" ? value.toDate() : null;
+}
+
+function readNullableNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

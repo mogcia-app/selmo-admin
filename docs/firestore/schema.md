@@ -13,6 +13,9 @@ type UserDocument = {
   email: string;
   role: "admin" | "sales";
   status: "active" | "inactive";
+  workExperienceYears?: number | null;
+  workExperienceMonths?: number | null;
+  workExperienceLocked?: boolean;
   teamId?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;

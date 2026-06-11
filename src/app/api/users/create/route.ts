@@ -8,10 +8,14 @@ type CreateUserRequest = {
   name?: unknown;
   email?: unknown;
   password?: unknown;
+  workExperienceYears?: unknown;
+  workExperienceMonths?: unknown;
 };
 
 type FirestoreValue = {
   stringValue?: string;
+  integerValue?: string;
+  booleanValue?: boolean;
   timestampValue?: string;
   nullValue?: null;
 };
@@ -55,7 +59,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
-    const { companyId, email, name, password, role } = parsed.value;
+    const { companyId, email, name, password, role, workExperienceMonths, workExperienceYears } = parsed.value;
 
     if (actor.role === "admin" && (role !== "sales" || actor.companyId !== companyId)) {
       return NextResponse.json({ error: "自社の営業マンのみ追加できます。" }, { status: 403 });
@@ -82,6 +86,8 @@ export async function POST(request: Request) {
         name,
         role,
         status: "active",
+        workExperienceYears,
+        workExperienceMonths,
       },
       token,
     );
@@ -177,6 +183,8 @@ async function writeUserDocument(
     name: string;
     role: "admin" | "sales";
     status: "active";
+    workExperienceYears: number | null;
+    workExperienceMonths: number | null;
   },
   token: string,
 ) {
@@ -196,6 +204,9 @@ async function writeUserDocument(
         email: { stringValue: input.email },
         status: { stringValue: input.status },
         createdBy: { stringValue: input.createdBy },
+        workExperienceYears: input.workExperienceYears === null ? { nullValue: null } : { integerValue: String(input.workExperienceYears) },
+        workExperienceMonths: input.workExperienceMonths === null ? { nullValue: null } : { integerValue: String(input.workExperienceMonths) },
+        workExperienceLocked: { booleanValue: input.role === "sales" && input.workExperienceYears !== null && input.workExperienceMonths !== null },
         createdAt: { timestampValue: now },
         lastLoginAt: { nullValue: null },
         updatedAt: { timestampValue: now },
@@ -217,6 +228,8 @@ function parseCreateUserRequest(body: CreateUserRequest):
         name: string;
         email: string;
         password: string;
+        workExperienceYears: number | null;
+        workExperienceMonths: number | null;
       };
     }
   | { ok: false; error: string } {
@@ -225,14 +238,30 @@ function parseCreateUserRequest(body: CreateUserRequest):
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
+  const workExperienceYears = parseNonNegativeInteger(body.workExperienceYears);
+  const workExperienceMonths = parseNonNegativeInteger(body.workExperienceMonths);
 
   if (!companyId) return { ok: false, error: "会社を選択してください。" };
   if (!role) return { ok: false, error: "権限を選択してください。" };
   if (!name) return { ok: false, error: "名前を入力してください。" };
   if (!email || !email.includes("@")) return { ok: false, error: "メールアドレスを入力してください。" };
   if (password.length < 6) return { ok: false, error: "パスワードは6文字以上で入力してください。" };
+  if (role === "sales" && workExperienceYears === null) return { ok: false, error: "勤務年数（年）を入力してください。" };
+  if (role === "sales" && workExperienceMonths === null) return { ok: false, error: "勤務年数（月）を入力してください。" };
+  if (role === "sales" && workExperienceMonths !== null && workExperienceMonths > 11) return { ok: false, error: "勤務年数の月は0〜11で入力してください。" };
 
-  return { ok: true, value: { companyId, role, name, email, password } };
+  return {
+    ok: true,
+    value: {
+      companyId,
+      role,
+      name,
+      email,
+      password,
+      workExperienceYears: role === "sales" ? workExperienceYears : null,
+      workExperienceMonths: role === "sales" ? workExperienceMonths : null,
+    },
+  };
 }
 
 function readUserFields(document: FirestoreDocument) {
@@ -253,6 +282,19 @@ function readBearerToken(request: Request) {
 
 function firestoreDocumentUrl(path: string) {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
+}
+
+function parseNonNegativeInteger(value: unknown) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  }
+
+  return null;
 }
 
 class ApiError extends Error {

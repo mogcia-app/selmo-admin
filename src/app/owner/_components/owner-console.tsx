@@ -13,6 +13,7 @@ import {
   createCompany,
   defaultMonthlyAiQuotas,
   saveAiPrompt,
+  subscribeToAiChargeEvents,
   subscribeToAiUsageLogs,
   subscribeToAiPrompts,
   subscribeToAnnouncements,
@@ -25,6 +26,7 @@ import {
   updateAnnouncement,
   updateCompanyFeatureFlags,
   updateUserByOwner,
+  type AiChargeEventRecord,
   type AiPromptRecord,
   type AiUsageLogRecord,
   type AnnouncementRecord,
@@ -48,6 +50,7 @@ type OwnerData = {
   announcements: AnnouncementRecord[];
   aiPrompts: AiPromptRecord[];
   aiUsageLogs: AiUsageLogRecord[];
+  aiChargeEvents: AiChargeEventRecord[];
   knowledgeSearchEvents: KnowledgeSearchEventRecord[];
   systemErrors: SystemErrorRecord[];
   audioProcessingJobs: AudioProcessingJobRecord[];
@@ -377,6 +380,8 @@ export function OwnerUsers() {
 export function OwnerBilling() {
   const data = useOwnerData();
   const rows = useCompanyUsageRows(data);
+  const chargeRows = buildAiChargeBillingRows(data);
+  const chargeSummary = summarizeAiChargeBillingRows(chargeRows);
 
   return (
     <OwnerPageShell>
@@ -386,6 +391,15 @@ export function OwnerBilling() {
         description="会社別の音声分数、OpenAI推定費用、Storage使用量、粗利見込みを確認します。"
       />
       <ErrorBanner message={data.error} />
+      <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="未請求チャージ会社数" value={`${chargeSummary.companyCount}社`} note="invoiceStatus: unbilled" muted={chargeSummary.companyCount === 0} />
+        <Metric label="未請求チャージ回数" value={`${chargeSummary.amount}回`} note="aiChargeEvents.amount" muted={chargeSummary.amount === 0} />
+        <Metric label="翌月請求予定額" value={formatYen(chargeSummary.totalJpy)} note="totalJpy 税込合計" muted={chargeSummary.totalJpy === 0} />
+        <Metric label="未請求イベント数" value={`${chargeSummary.eventCount}件`} note="チャージ履歴" muted={chargeSummary.eventCount === 0} />
+      </div>
+      <Panel title="AIチャージ請求確認">
+        <AiChargeBillingTable rows={chargeRows} />
+      </Panel>
       <Panel title="会社別の利用量">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] border-collapse">
@@ -628,6 +642,7 @@ function useOwnerData(): OwnerData {
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
   const [aiPrompts, setAiPrompts] = useState<AiPromptRecord[]>([]);
   const [aiUsageLogs, setAiUsageLogs] = useState<AiUsageLogRecord[]>([]);
+  const [aiChargeEvents, setAiChargeEvents] = useState<AiChargeEventRecord[]>([]);
   const [knowledgeSearchEvents, setKnowledgeSearchEvents] = useState<KnowledgeSearchEventRecord[]>([]);
   const [systemErrors, setSystemErrors] = useState<SystemErrorRecord[]>([]);
   const [audioProcessingJobs, setAudioProcessingJobs] = useState<AudioProcessingJobRecord[]>([]);
@@ -645,6 +660,7 @@ function useOwnerData(): OwnerData {
       subscribeToAnnouncements(setAnnouncements, handleError),
       subscribeToAiPrompts(setAiPrompts, handleError),
       subscribeToAiUsageLogs(setAiUsageLogs, handleError),
+      subscribeToAiChargeEvents(setAiChargeEvents, handleError),
       subscribeToKnowledgeSearchEvents(setKnowledgeSearchEvents, handleError),
       subscribeToSystemErrors(setSystemErrors, handleError),
       subscribeToAudioProcessingJobs(setAudioProcessingJobs, handleError),
@@ -665,6 +681,7 @@ function useOwnerData(): OwnerData {
     announcements,
     aiPrompts,
     aiUsageLogs,
+    aiChargeEvents,
     knowledgeSearchEvents,
     systemErrors,
     audioProcessingJobs,
@@ -1056,6 +1073,58 @@ function CostCompanyTable({ rows }: { rows: ReturnType<typeof useCompanyUsageRow
               </tr>
             );
           })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+type AiChargeBillingRow = {
+  key: string;
+  companyName: string;
+  chargeMonth: string;
+  billingMonth: string;
+  amount: number;
+  packagePriceJpy: number;
+  totalJpy: number;
+  eventCount: number;
+  plans: string[];
+  latestChargedAt: Date | null;
+};
+
+function AiChargeBillingTable({ rows }: { rows: AiChargeBillingRow[] }) {
+  if (rows.length === 0) return <Empty message="未請求のAIチャージはありません。" />;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[980px] border-collapse">
+        <thead>
+          <tr className="border-b border-[#e6e9ef] text-left text-[12px] font-bold text-[#7a808c]">
+            <th className="px-3 py-3">翌月請求月</th>
+            <th className="px-3 py-3">会社</th>
+            <th className="px-3 py-3">チャージ月</th>
+            <th className="px-3 py-3">プラン</th>
+            <th className="px-3 py-3">チャージ回数</th>
+            <th className="px-3 py-3">税抜金額</th>
+            <th className="px-3 py-3">税込請求額</th>
+            <th className="px-3 py-3">イベント数</th>
+            <th className="px-3 py-3">最終チャージ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className="border-b border-[#eef1f5] text-[13px]">
+              <td className="px-3 py-4 font-bold text-[#20242c]">{row.billingMonth}</td>
+              <td className="px-3 py-4 font-bold text-[#20242c]">{row.companyName}</td>
+              <td className="px-3 py-4 text-[#343b48]">{row.chargeMonth}</td>
+              <td className="px-3 py-4 text-[#343b48]">{row.plans.join(" / ")}</td>
+              <td className="px-3 py-4 text-[#343b48]">{row.amount}回</td>
+              <td className="px-3 py-4 text-[#343b48]">{formatYen(row.packagePriceJpy)}</td>
+              <td className="px-3 py-4 font-bold text-[#20242c]">{formatYen(row.totalJpy)}</td>
+              <td className="px-3 py-4 text-[#343b48]">{row.eventCount}件</td>
+              <td className="px-3 py-4 text-[#343b48]">{formatDateTime(row.latestChargedAt)}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -1870,6 +1939,61 @@ function buildUserUsageRows(data: OwnerData, companyFilter: string): UserUsageRo
   });
 }
 
+function buildAiChargeBillingRows(data: OwnerData): AiChargeBillingRow[] {
+  const groups = new Map<string, AiChargeBillingRow>();
+
+  data.aiChargeEvents
+    .filter((event) => event.invoiceStatus === "unbilled")
+    .forEach((event) => {
+      const company = data.companies.find((item) => item.id === event.companyId);
+      const chargeMonth = formatYearMonth(event.createdAt);
+      const billingMonth = formatNextYearMonth(event.createdAt);
+      const companyName = company?.companyName ?? event.companyName ?? event.companyId ?? "未紐付け";
+      const key = `${event.companyId ?? companyName}_${chargeMonth}`;
+      const packagePriceJpy = event.packagePriceJpy ?? event.priceJpy ?? (event.amount * (event.unitPriceJpy ?? 6500));
+      const totalJpy = event.totalJpy ?? Math.round(packagePriceJpy * 1.1);
+      const planLabel = formatChargePlan(event.chargePlan);
+      const current = groups.get(key);
+
+      if (current) {
+        current.amount += event.amount;
+        current.packagePriceJpy += packagePriceJpy;
+        current.totalJpy += totalJpy;
+        current.eventCount += 1;
+        current.latestChargedAt = getLatestDate([current.latestChargedAt, event.createdAt]);
+        if (!current.plans.includes(planLabel)) current.plans.push(planLabel);
+        return;
+      }
+
+      groups.set(key, {
+        key,
+        companyName,
+        chargeMonth,
+        billingMonth,
+        amount: event.amount,
+        packagePriceJpy,
+        totalJpy,
+        eventCount: 1,
+        plans: [planLabel],
+        latestChargedAt: event.createdAt,
+      });
+    });
+
+  return Array.from(groups.values()).sort((left, right) => {
+    if (left.billingMonth !== right.billingMonth) return left.billingMonth.localeCompare(right.billingMonth);
+    return left.companyName.localeCompare(right.companyName, "ja");
+  });
+}
+
+function summarizeAiChargeBillingRows(rows: AiChargeBillingRow[]) {
+  return {
+    companyCount: new Set(rows.map((row) => row.companyName)).size,
+    amount: rows.reduce((sum, row) => sum + row.amount, 0),
+    totalJpy: rows.reduce((sum, row) => sum + row.totalJpy, 0),
+    eventCount: rows.reduce((sum, row) => sum + row.eventCount, 0),
+  };
+}
+
 type AudioJobStatus = "waiting" | "transcribing" | "analyzing" | "running" | "completed" | "failed";
 
 type AudioJobRow = {
@@ -2086,6 +2210,16 @@ function formatDate(date: Date | null) {
   return new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+function formatYearMonth(date: Date | null) {
+  if (!date) return "未登録";
+  return new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "2-digit" }).format(date);
+}
+
+function formatNextYearMonth(date: Date | null) {
+  if (!date) return "未登録";
+  return formatYearMonth(new Date(date.getFullYear(), date.getMonth() + 1, 1));
+}
+
 function formatDateInput(date: Date | null) {
   if (!date) return "";
   const year = date.getFullYear();
@@ -2159,6 +2293,12 @@ function formatPlan(plan: CompanyPlan) {
 
 function formatQuota(value: number | null) {
   return value === null ? "要相談" : `${value}回`;
+}
+
+function formatChargePlan(plan: string) {
+  if (plan === "single") return "1回チャージ";
+  if (plan === "ten_pack") return "10回チャージ";
+  return plan || "未設定";
 }
 
 const costCoefficients = {

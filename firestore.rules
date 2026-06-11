@@ -241,6 +241,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /aiChargeEvents/{eventId} {
+      allow read, create, update: if isOwnerRole();
+      allow delete: if false;
+    }
+
     match /knowledgeSearchEvents/{eventId} {
       allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
       allow create: if isOwnerRole() || (

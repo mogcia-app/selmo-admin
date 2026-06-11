@@ -83,6 +83,24 @@ export type AiUsageLogRecord = {
   createdAt: Date | null;
 };
 
+export type AiChargeEventRecord = {
+  id: string;
+  companyId: string | null;
+  companyName: string;
+  userId: string | null;
+  userName: string;
+  userEmail: string;
+  amount: number;
+  chargePlan: "single" | "ten_pack" | string;
+  packagePriceJpy: number | null;
+  priceJpy: number | null;
+  unitPriceJpy: number | null;
+  totalJpy: number | null;
+  status: "completed" | string;
+  invoiceStatus: "unbilled" | "billed" | string;
+  createdAt: Date | null;
+};
+
 export type KnowledgeSearchEventRecord = {
   id: string;
   companyId: string | null;
@@ -274,6 +292,24 @@ export function subscribeToAiUsageLogs(
   );
 }
 
+export function subscribeToAiChargeEvents(
+  callback: (events: AiChargeEventRecord[]) => void,
+  onError?: (error: FirestoreError) => void,
+): Unsubscribe {
+  const { firestore } = assertFirebaseClient();
+
+  return onSnapshot(
+    collection(firestore, "aiChargeEvents"),
+    (snapshot) =>
+      callback(
+        snapshot.docs
+          .map(mapAiChargeEvent)
+          .sort((left, right) => (right.createdAt?.getTime() ?? 0) - (left.createdAt?.getTime() ?? 0)),
+      ),
+    onError,
+  );
+}
+
 export function subscribeToKnowledgeSearchEvents(
   callback: (events: KnowledgeSearchEventRecord[]) => void,
   onError?: (error: FirestoreError) => void,
@@ -451,6 +487,28 @@ function mapAiUsageLog(snapshot: QueryDocumentSnapshot): AiUsageLogRecord {
     estimatedCostUsd: readNullableNumber(data.estimatedCostUsd),
     status: readString(data.status),
     errorMessage: readNullableString(data.errorMessage),
+    createdAt: readDate(data.createdAt),
+  };
+}
+
+function mapAiChargeEvent(snapshot: QueryDocumentSnapshot): AiChargeEventRecord {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    companyId: readNullableString(data.companyId),
+    companyName: readString(data.companyName, "未設定の会社"),
+    userId: readNullableString(data.userId),
+    userName: readString(data.userName, "未設定"),
+    userEmail: readString(data.userEmail),
+    amount: readNullableNumber(data.amount) ?? 0,
+    chargePlan: readString(data.chargePlan),
+    packagePriceJpy: readNullableNumber(data.packagePriceJpy),
+    priceJpy: readNullableNumber(data.priceJpy),
+    unitPriceJpy: readNullableNumber(data.unitPriceJpy),
+    totalJpy: readNullableNumber(data.totalJpy),
+    status: readString(data.status, "completed"),
+    invoiceStatus: readString(data.invoiceStatus, "unbilled"),
     createdAt: readDate(data.createdAt),
   };
 }

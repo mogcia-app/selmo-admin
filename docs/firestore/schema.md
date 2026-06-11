@@ -171,6 +171,31 @@ type UserMonthlyStatsDocument = {
 };
 ```
 
+### `aiChargeEvents/{eventId}`
+
+AI回数のチャージが発生したタイミングで作成します。請求管理側はこのコレクションを会社別・月別に集計し、`invoiceStatus: "unbilled"` のイベントを請求対象として扱います。請求書発行後は `invoiceStatus` を `"billed"` に更新する想定です。
+
+請求時は `amount` だけでなく、`chargePlan`、税抜パッケージ価格の `packagePriceJpy`、税込請求額の `totalJpy` を参照します。1回チャージは税抜6,500円、10回チャージは税抜65,000円です。
+
+```ts
+type AiChargeEventDocument = {
+  companyId: string;
+  companyName: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  amount: number;
+  chargePlan: "single" | "ten_pack";
+  packagePriceJpy: number;
+  priceJpy: number; // packagePriceJpy と同じ税抜金額
+  unitPriceJpy: 6500;
+  totalJpy: number;
+  status: "completed";
+  createdAt: Timestamp;
+  invoiceStatus: "unbilled" | "billed";
+};
+```
+
 ### `manualChecklists/{checklistId}`
 
 ```ts

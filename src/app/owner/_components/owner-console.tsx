@@ -11,6 +11,7 @@ import { subscribeToMeetings, type MeetingRecord } from "@/lib/firebase/meetings
 import {
   createAnnouncement,
   createCompany,
+  defaultMonthlyAiQuotas,
   saveAiPrompt,
   subscribeToAiUsageLogs,
   subscribeToAiPrompts,
@@ -87,6 +88,7 @@ export function OwnerCompanies() {
   const [companyName, setCompanyName] = useState("");
   const [plan, setPlan] = useState<CompanyPlan>("standard");
   const [status, setStatus] = useState<CompanyStatus>("active");
+  const [monthlyAiQuota, setMonthlyAiQuota] = useState("15");
   const [isSaving, setIsSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -96,10 +98,18 @@ export function OwnerCompanies() {
     if (!trimmedName) return;
     setIsSaving(true);
     try {
-      await createCompany({ companyName: trimmedName, plan, status });
+      const parsedMonthlyAiQuota = plan === "enterprise" ? parseQuota(monthlyAiQuota) : defaultMonthlyAiQuotas[plan];
+      await createCompany({
+        companyName: trimmedName,
+        plan,
+        status,
+        monthlyTranscriptionQuota: parsedMonthlyAiQuota,
+        monthlyRoleplayQuota: parsedMonthlyAiQuota,
+      });
       setCompanyName("");
       setPlan("standard");
       setStatus("active");
+      setMonthlyAiQuota("15");
       setDialogOpen(false);
     } finally {
       setIsSaving(false);
@@ -131,6 +141,7 @@ export function OwnerCompanies() {
               <tr className="border-b border-[#e6e9ef] text-left text-[12px] font-bold text-[#7a808c]">
                 <th className="px-3 py-3">会社</th>
                 <th className="px-3 py-3">プラン</th>
+                <th className="px-3 py-3">AI回数</th>
                 <th className="px-3 py-3">月額料金</th>
                 <th className="px-3 py-3">契約開始日</th>
                 <th className="px-3 py-3">ステータス</th>
@@ -161,7 +172,25 @@ export function OwnerCompanies() {
             </div>
             <form onSubmit={handleCreate} className="grid gap-4 p-5">
               <Field label="会社名" value={companyName} onChange={setCompanyName} placeholder="株式会社サンプル" />
-              <Select label="プラン" value={plan} onChange={(value) => setPlan(value as CompanyPlan)} options={planOptions} />
+              <Select
+                label="プラン"
+                value={plan}
+                onChange={(value) => {
+                  const nextPlan = value as CompanyPlan;
+                  setPlan(nextPlan);
+                  const defaultQuota = defaultMonthlyAiQuotas[nextPlan];
+                  setMonthlyAiQuota(defaultQuota === null ? "" : String(defaultQuota));
+                }}
+                options={planOptions}
+              />
+              <Field
+                label="月間AI回数"
+                value={monthlyAiQuota}
+                onChange={setMonthlyAiQuota}
+                placeholder={plan === "enterprise" ? "例: 100" : String(defaultMonthlyAiQuotas[plan] ?? "")}
+                type="number"
+                disabled={plan !== "enterprise"}
+              />
               <Select label="ステータス" value={status} onChange={(value) => setStatus(value as CompanyStatus)} options={companyStatusOptions} />
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setDialogOpen(false)} className="rounded-[8px] border border-[#eadfbc] bg-white px-4 py-3 text-[13px] font-bold text-[#343b48] transition hover:bg-[#fff8e4]">
@@ -207,6 +236,8 @@ export function OwnerCompanyDetail({ companyId }: { companyId: string }) {
       />
       <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="契約プラン" value={formatPlan(row.company.plan)} note="companies.plan" />
+        <Metric label="文字起こし上限" value={formatQuota(row.company.monthlyTranscriptionQuota)} note="月間回数" />
+        <Metric label="ロープレ上限" value={formatQuota(row.company.monthlyRoleplayQuota)} note="月間回数" />
         <Metric label="契約ステータス" value={row.company.status} note="companies.status" />
         <Metric label="管理者数" value={`${admins.length}名`} note="role: admin" />
         <Metric label="営業マン数" value={`${sales.length}名`} note="role: sales" />
@@ -219,6 +250,8 @@ export function OwnerCompanyDetail({ companyId }: { companyId: string }) {
             items={[
               ["会社名", row.company.companyName],
               ["契約プラン", formatPlan(row.company.plan)],
+              ["文字起こし上限", formatQuota(row.company.monthlyTranscriptionQuota)],
+              ["ロープレ上限", formatQuota(row.company.monthlyRoleplayQuota)],
               ["月額料金", formatYenOrPending(row.company.monthlyFee)],
               ["契約開始日", formatDate(row.company.contractStartDate)],
               ["契約ステータス", row.company.status],
@@ -231,8 +264,9 @@ export function OwnerCompanyDetail({ companyId }: { companyId: string }) {
           <KeyValueList
             items={[
               ["音声分析件数", `${row.monthlyAudioAnalyses}件`],
+              ["音声文字起こし枠", `${row.monthlyTranscriptionUses} / ${formatQuota(row.company.monthlyTranscriptionQuota)}`],
               ["音声分析時間", formatMinutes(row.monthlyAudioDurationSec)],
-              ["ロープレ回数", `${row.monthlyRoleplayCount}回`],
+              ["ロープレ回数", `${row.monthlyRoleplayUses} / ${formatQuota(row.company.monthlyRoleplayQuota)}`],
               ["ナレッジ検索回数", `${row.monthlyKnowledgeSearchCount}回`],
               ["Storage使用量", formatBytes(row.storageBytes)],
               ["AI利用量", `${row.monthlyAiEvents}回`],
@@ -389,7 +423,9 @@ export function OwnerUsage() {
   const scopedRows = companyFilter === "all" ? rows : rows.filter((row) => row.company.id === companyFilter);
   const userRows = buildUserUsageRows(data, companyFilter);
   const total = summarizeRows(scopedRows);
-  const riskRows = rows.filter((row) => row.audioUsageRate !== null && row.audioUsageRate >= 80);
+  const riskRows = rows.filter((row) =>
+    [row.transcriptionUsageRate, row.roleplayUsageRate].some((rate) => rate !== null && rate >= 80),
+  );
 
   return (
     <OwnerPageShell>
@@ -648,6 +684,9 @@ function useCompanyUsageRows(data: OwnerData) {
         const monthlyMeetings = companyMeetings.filter((meeting) => isCurrentMonth(meeting.recordedAt));
         const monthlyRoleplayResults = companyRoleplayResults.filter((result) => isCurrentMonth(result.createdAt));
         const monthlyAiUsageLogs = companyAiUsageLogs.filter((log) => isCurrentMonth(log.createdAt));
+        const monthlyTranscriptionUses = countSuccessfulAiUsage(monthlyAiUsageLogs, "transcription");
+        const monthlyRoleplayUses =
+          countSuccessfulAiUsage(monthlyAiUsageLogs, "roleplay") || monthlyRoleplayResults.length;
         const monthlyKnowledgeSearchEvents = companyKnowledgeSearchEvents.filter((event) => isCurrentMonth(event.createdAt));
         const lastUsedAt = getLatestDate([
           ...companyMeetings.map((meeting) => meeting.recordedAt),
@@ -663,6 +702,8 @@ function useCompanyUsageRows(data: OwnerData) {
         const audioLimitMinutes = planLimits[company.plan].audioMinutes;
         const audioUsageRate =
           audioLimitMinutes === null ? null : Math.round((monthlyAudioDurationSec / 60 / audioLimitMinutes) * 100);
+        const transcriptionUsageRate = calculateUsageRate(monthlyTranscriptionUses, company.monthlyTranscriptionQuota);
+        const roleplayUsageRate = calculateUsageRate(monthlyRoleplayUses, company.monthlyRoleplayQuota);
 
         return {
           company,
@@ -680,11 +721,15 @@ function useCompanyUsageRows(data: OwnerData) {
           monthlyAudioDurationSec,
           monthlyAiEvents: monthlyAiUsageLogs.length || monthlyMeetings.reduce((sum, meeting) => sum + countMeetingAiEvents(meeting), 0),
           monthlyRoleplayCount: monthlyRoleplayResults.length,
+          monthlyTranscriptionUses,
+          monthlyRoleplayUses,
           monthlyKnowledgeSearchCount: monthlyKnowledgeSearchEvents.length,
           monthlyAiCostUsd: monthlyAiCost.total,
           monthlyAiCostBreakdown: monthlyAiCost,
           audioLimitMinutes,
           audioUsageRate,
+          transcriptionUsageRate,
+          roleplayUsageRate,
         };
       }),
     [data.aiUsageLogs, data.companies, data.knowledgeItems, data.knowledgeSearchEvents, data.meetings, data.roleplayResults, data.users],
@@ -694,15 +739,19 @@ function useCompanyUsageRows(data: OwnerData) {
 function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[number] }) {
   const [plan, setPlan] = useState<CompanyPlan>(row.company.plan);
   const [status, setStatus] = useState<CompanyStatus>(row.company.status);
+  const [monthlyTranscriptionQuota, setMonthlyTranscriptionQuota] = useState(row.company.monthlyTranscriptionQuota?.toString() ?? "");
+  const [monthlyRoleplayQuota, setMonthlyRoleplayQuota] = useState(row.company.monthlyRoleplayQuota?.toString() ?? "");
   const [monthlyFee, setMonthlyFee] = useState(row.company.monthlyFee?.toString() ?? "");
   const [contractStartDate, setContractStartDate] = useState(formatDateInput(row.company.contractStartDate));
 
   useEffect(() => {
     setPlan(row.company.plan);
     setStatus(row.company.status);
+    setMonthlyTranscriptionQuota(row.company.monthlyTranscriptionQuota?.toString() ?? "");
+    setMonthlyRoleplayQuota(row.company.monthlyRoleplayQuota?.toString() ?? "");
     setMonthlyFee(row.company.monthlyFee?.toString() ?? "");
     setContractStartDate(formatDateInput(row.company.contractStartDate));
-  }, [row.company.contractStartDate, row.company.monthlyFee, row.company.plan, row.company.status]);
+  }, [row.company.contractStartDate, row.company.monthlyFee, row.company.monthlyRoleplayQuota, row.company.monthlyTranscriptionQuota, row.company.plan, row.company.status]);
 
   async function persist(input: Parameters<typeof updateCompany>[1]) {
     await updateCompany(row.company.id, input);
@@ -721,11 +770,44 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
           value={plan}
           onChange={(value) => {
             const nextPlan = value as CompanyPlan;
+            const defaultQuota = defaultMonthlyAiQuotas[nextPlan];
             setPlan(nextPlan);
-            void persist({ plan: nextPlan });
+            if (defaultQuota !== null) {
+              setMonthlyTranscriptionQuota(String(defaultQuota));
+              setMonthlyRoleplayQuota(String(defaultQuota));
+            }
+            void persist({
+              plan: nextPlan,
+              ...(defaultQuota !== null
+                ? { monthlyTranscriptionQuota: defaultQuota, monthlyRoleplayQuota: defaultQuota }
+                : {}),
+            });
           }}
           options={planOptions}
         />
+      </td>
+      <td className="px-3 py-4 text-[#343b48]">
+        <div className="flex min-w-[220px] gap-2">
+          <input
+            value={monthlyTranscriptionQuota}
+            onChange={(event) => setMonthlyTranscriptionQuota(event.target.value)}
+            onBlur={() => void persist({ monthlyTranscriptionQuota: parseQuota(monthlyTranscriptionQuota) })}
+            inputMode="numeric"
+            placeholder="文字起こし"
+            className="w-[104px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400]"
+            aria-label={`${row.company.companyName} 文字起こし月間上限`}
+          />
+          <input
+            value={monthlyRoleplayQuota}
+            onChange={(event) => setMonthlyRoleplayQuota(event.target.value)}
+            onBlur={() => void persist({ monthlyRoleplayQuota: parseQuota(monthlyRoleplayQuota) })}
+            inputMode="numeric"
+            placeholder="ロープレ"
+            className="w-[104px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400]"
+            aria-label={`${row.company.companyName} ロープレ月間上限`}
+          />
+        </div>
+        <div className="mt-1 text-[11px] text-[#8a909b]">文字起こし / ロープレ</div>
       </td>
       <td className="px-3 py-4 text-[#343b48]">
         <input
@@ -856,13 +938,13 @@ function UsageMonitoringTable({ rows, compact = false }: { rows: ReturnType<type
           <tr className="border-b border-[#e6e9ef] text-left text-[12px] font-bold text-[#7a808c]">
             <th className="px-3 py-3">会社</th>
             <th className="px-3 py-3">プラン</th>
-            <th className="px-3 py-3">音声アップロード</th>
-            <th className="px-3 py-3">音声分析</th>
+            <th className="px-3 py-3">文字起こし枠</th>
             <th className="px-3 py-3">音声時間</th>
             <th className="px-3 py-3">AI分析</th>
-            <th className="px-3 py-3">ロープレ</th>
+            <th className="px-3 py-3">ロープレ枠</th>
             <th className="px-3 py-3">Storage</th>
-            <th className="px-3 py-3">利用率</th>
+            <th className="px-3 py-3">文字起こし率</th>
+            <th className="px-3 py-3">ロープレ率</th>
           </tr>
         </thead>
         <tbody>
@@ -870,24 +952,30 @@ function UsageMonitoringTable({ rows, compact = false }: { rows: ReturnType<type
             <tr key={row.company.id} className="border-b border-[#eef1f5] text-[13px]">
               <td className="px-3 py-4 font-bold text-[#20242c]">{row.company.companyName}</td>
               <td className="px-3 py-4 text-[#343b48]">{formatPlan(row.company.plan)}</td>
-              <td className="px-3 py-4 text-[#343b48]">{row.monthlyAudioUploads}件</td>
-              <td className="px-3 py-4 text-[#343b48]">{row.monthlyAudioAnalyses}件</td>
+              <td className="px-3 py-4 text-[#343b48]">{row.monthlyTranscriptionUses} / {formatQuota(row.company.monthlyTranscriptionQuota)}</td>
               <td className="px-3 py-4 text-[#343b48]">{formatMinutes(row.monthlyAudioDurationSec)}</td>
               <td className="px-3 py-4 text-[#343b48]">{row.monthlyAiEvents}回</td>
-              <td className="px-3 py-4 text-[#343b48]">{row.monthlyRoleplayCount}回</td>
+              <td className="px-3 py-4 text-[#343b48]">{row.monthlyRoleplayUses} / {formatQuota(row.company.monthlyRoleplayQuota)}</td>
               <td className="px-3 py-4 text-[#343b48]">{formatBytes(row.storageBytes)}</td>
               <td className="px-3 py-4">
-                {row.audioUsageRate === null ? (
+                {row.transcriptionUsageRate === null ? (
                   <span className="font-bold text-[#8a909b]">無制限</span>
                 ) : (
-                  <UsageRate rate={row.audioUsageRate} />
+                  <UsageRate rate={row.transcriptionUsageRate} />
+                )}
+              </td>
+              <td className="px-3 py-4">
+                {row.roleplayUsageRate === null ? (
+                  <span className="font-bold text-[#8a909b]">無制限</span>
+                ) : (
+                  <UsageRate rate={row.roleplayUsageRate} />
                 )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {compact ? <p className="mt-3 text-[12px] text-[#7a808c]">利用率は今月の音声時間をプラン上限で割った概算です。</p> : null}
+      {compact ? <p className="mt-3 text-[12px] text-[#7a808c]">利用率は今月の文字起こし・ロープレ回数を会社別上限で割った概算です。</p> : null}
     </div>
   );
 }
@@ -1535,7 +1623,7 @@ function Metric({ label, value, note, muted = false }: { label: string; value: s
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string }) {
+function Field({ label, value, onChange, placeholder, type = "text", disabled = false }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string; disabled?: boolean }) {
   return (
     <label className="block">
       <span className="mb-2 block text-[12px] font-bold text-[#343b48]">{label}</span>
@@ -1544,7 +1632,8 @@ function Field({ label, value, onChange, placeholder, type = "text" }: { label: 
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-4 py-3 text-[14px] outline-none transition placeholder:text-[#b0a894] focus:border-[#ffc400] focus:bg-white focus:shadow-[0_0_0_3px_rgba(255,196,0,0.16)]"
+        disabled={disabled}
+        className="w-full rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-4 py-3 text-[14px] outline-none transition placeholder:text-[#b0a894] focus:border-[#ffc400] focus:bg-white focus:shadow-[0_0_0_3px_rgba(255,196,0,0.16)] disabled:bg-[#f8f6ef] disabled:text-[#8a909b]"
       />
     </label>
   );
@@ -1648,6 +1737,15 @@ function countMeetingAiEvents(meeting: MeetingRecord) {
     meeting.conversationLogStatus,
     meeting.aiSummaryStatus,
   ].filter((status) => status === "completed").length;
+}
+
+function countSuccessfulAiUsage(logs: AiUsageLogRecord[], feature: string) {
+  return logs.filter((log) => log.feature === feature && log.status !== "failed").length;
+}
+
+function calculateUsageRate(used: number, limit: number | null) {
+  if (limit === null || limit <= 0) return null;
+  return Math.round((used / limit) * 100);
 }
 
 function estimateAiCostUsd(input: { meetings: MeetingRecord[]; roleplayResults: RoleplayResult[]; aiUsageLogs?: AiUsageLogRecord[] }) {
@@ -2009,6 +2107,13 @@ function parseMonthlyFee(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function parseQuota(value: string) {
+  const normalized = value.replace(/,/g, "").trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : null;
+}
+
 function formatMinutes(durationSec: number) {
   if (!durationSec) return "0分";
   return `${Math.round(durationSec / 60)}分`;
@@ -2050,6 +2155,10 @@ function formatErrorStatus(status: string) {
 
 function formatPlan(plan: CompanyPlan) {
   return planOptions.find((option) => option.value === plan)?.label ?? plan;
+}
+
+function formatQuota(value: number | null) {
+  return value === null ? "要相談" : `${value}回`;
 }
 
 const costCoefficients = {

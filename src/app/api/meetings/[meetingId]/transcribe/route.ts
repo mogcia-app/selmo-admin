@@ -6,6 +6,13 @@ import { promisify } from "node:util";
 
 import { NextResponse } from "next/server";
 
+import {
+  AiQuotaExceededError,
+  assertAiQuotaAvailable,
+  readMeetingQuotaContext,
+  writeAiUsageLog,
+} from "@/lib/server/ai-usage-quota";
+
 export const runtime = "nodejs";
 
 const maxTranscriptionFileSizeBytes = 25 * 1024 * 1024;
@@ -76,6 +83,11 @@ export async function POST(
           | "gpt-4o-transcribe-diarize"
           | "whisper-1")
       : "gpt-4o-mini-transcribe";
+    const quotaContext = await readMeetingQuotaContext(meetingId);
+    await assertAiQuotaAvailable({
+      companyId: quotaContext.companyId,
+      feature: "transcription",
+    });
 
     const audioResponse = await fetchWithTimeout(body.audioDownloadUrl, {
       timeoutMs: remoteFetchTimeoutMs,
@@ -141,6 +153,15 @@ export async function POST(
       );
       const segments = flattenSegmentsWithOffsets(chunkResults);
 
+      await writeAiUsageLog({
+        companyId: quotaContext.companyId,
+        userId: quotaContext.userId,
+        feature: "transcription",
+        model,
+        meetingId,
+        audioDurationSec: durationSec || body.audioDurationSec || null,
+      });
+
       return NextResponse.json({
         meetingId,
         model,
@@ -163,6 +184,18 @@ export async function POST(
       await rm(tempDir, { recursive: true, force: true });
     }
   } catch (error) {
+    if (error instanceof AiQuotaExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          feature: error.feature,
+          limit: error.limit,
+          used: error.used,
+        },
+        { status: 429 },
+      );
+    }
+
     const message =
       error instanceof Error ? error.message : "文字起こし処理に失敗しました。";
 

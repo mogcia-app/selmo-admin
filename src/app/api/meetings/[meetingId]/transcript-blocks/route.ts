@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 import { NextResponse } from "next/server";
 
+import { readMeetingQuotaContext, writeAiUsageLog } from "@/lib/server/ai-usage-quota";
+
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
@@ -65,6 +67,7 @@ export async function POST(
     const model = supportedModels.has(body.model ?? "")
       ? (body.model as "gpt-4o-mini-transcribe" | "gpt-4o-transcribe")
       : "gpt-4o-mini-transcribe";
+    const quotaContext = await readMeetingQuotaContext(meetingId);
 
     const audioResponse = await fetchWithTimeout(body.audioDownloadUrl, {
       timeoutMs: remoteFetchTimeoutMs,
@@ -133,6 +136,15 @@ export async function POST(
           confidence: "estimated" as const,
         })),
       ).filter((block) => block.text);
+
+      await writeAiUsageLog({
+        companyId: quotaContext.companyId,
+        userId: quotaContext.userId,
+        feature: "transcript_blocks",
+        model,
+        meetingId,
+        audioDurationSec,
+      });
 
       return NextResponse.json({
         meetingId,

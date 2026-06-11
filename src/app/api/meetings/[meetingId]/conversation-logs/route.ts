@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { readMeetingQuotaContext, writeAiUsageLog } from "@/lib/server/ai-usage-quota";
+
 export const runtime = "nodejs";
 
 const remoteFetchTimeoutMs = 10 * 60 * 1000;
@@ -60,6 +62,14 @@ export async function POST(
     const logs = await buildConversationLogs({
       transcriptText: body.transcriptText ?? null,
       segments,
+    });
+    const quotaContext = await readMeetingQuotaContext(meetingId);
+    await writeAiUsageLog({
+      companyId: quotaContext.companyId,
+      userId: quotaContext.userId,
+      feature: "conversation_analysis",
+      model: "gpt-4o-mini",
+      meetingId,
     });
 
     return NextResponse.json({

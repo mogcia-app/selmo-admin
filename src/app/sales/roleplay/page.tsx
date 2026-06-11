@@ -68,7 +68,12 @@ export default function SalesRoleplayPage() {
       const response = await fetch("/api/roleplay/respond", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario, messages: nextMessages }),
+        body: JSON.stringify({
+          scenario,
+          messages: nextMessages,
+          companyId: profile?.companyId ?? null,
+          userId: profile?.uid ?? null,
+        }),
       });
       const data = (await response.json()) as { message?: string; error?: string };
       if (!response.ok) {

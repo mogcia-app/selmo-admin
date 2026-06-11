@@ -24,6 +24,8 @@ export type CompanyRecord = {
   companyName: string;
   plan: CompanyPlan;
   status: CompanyStatus;
+  monthlyTranscriptionQuota: number | null;
+  monthlyRoleplayQuota: number | null;
   monthlyFee: number | null;
   billingCurrency: "JPY";
   contractStartDate: Date | null;
@@ -140,14 +142,19 @@ export async function createCompany(input: {
   companyName: string;
   plan: CompanyPlan;
   status: CompanyStatus;
+  monthlyTranscriptionQuota?: number | null;
+  monthlyRoleplayQuota?: number | null;
 }) {
   const { firestore } = assertFirebaseClient();
   const companyRef = doc(collection(firestore, "companies"));
+  const defaultQuota = defaultMonthlyAiQuotas[input.plan];
 
   await setDoc(companyRef, {
     companyName: input.companyName,
     plan: input.plan,
     status: input.status,
+    monthlyTranscriptionQuota: input.monthlyTranscriptionQuota ?? defaultQuota,
+    monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultQuota,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -157,7 +164,7 @@ export async function createCompany(input: {
 
 export async function updateCompany(
   companyId: string,
-  input: Partial<Pick<CompanyRecord, "companyName" | "plan" | "status" | "monthlyFee" | "billingCurrency" | "contractStartDate">>,
+  input: Partial<Pick<CompanyRecord, "companyName" | "plan" | "status" | "monthlyTranscriptionQuota" | "monthlyRoleplayQuota" | "monthlyFee" | "billingCurrency" | "contractStartDate">>,
 ) {
   const { firestore } = assertFirebaseClient();
 
@@ -360,7 +367,7 @@ export async function updateUserByOwner(
 
 function mapCompany(snapshot: QueryDocumentSnapshot): CompanyRecord {
   const data = snapshot.data();
-  const plan =
+  const plan: CompanyPlan =
     data.plan === "pro" || data.plan === "enterprise" || data.plan === "standard"
       ? data.plan
       : "standard";
@@ -372,6 +379,8 @@ function mapCompany(snapshot: QueryDocumentSnapshot): CompanyRecord {
     companyName: readString(data.companyName, "未設定の会社"),
     plan,
     status,
+    monthlyTranscriptionQuota: readQuota(data.monthlyTranscriptionQuota, defaultMonthlyAiQuotas[plan]),
+    monthlyRoleplayQuota: readQuota(data.monthlyRoleplayQuota, defaultMonthlyAiQuotas[plan]),
     monthlyFee: readNullableNumber(data.monthlyFee),
     billingCurrency: "JPY",
     contractStartDate: readDate(data.contractStartDate) ?? readDate(data.createdAt),
@@ -514,3 +523,17 @@ function readNullableString(value: unknown) {
 function readBoolean(value: unknown) {
   return value === true;
 }
+
+function readQuota(value: unknown, fallback: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(0, Math.floor(value));
+}
+
+export const defaultMonthlyAiQuotas: Record<CompanyPlan, number | null> = {
+  standard: 15,
+  pro: 30,
+  enterprise: null,
+};

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  AiQuotaExceededError,
+  assertAiQuotaAvailable,
+  writeAiUsageLog,
+} from "@/lib/server/ai-usage-quota";
+
 type RoleplayMessage = {
   role: "customer" | "sales";
   content: string;
@@ -18,6 +24,8 @@ export async function POST(request: NextRequest) {
   const body = (await request.json()) as {
     scenario?: RoleplayScenarioPayload;
     messages?: RoleplayMessage[];
+    companyId?: string | null;
+    userId?: string | null;
   };
 
   if (!body.scenario || !Array.isArray(body.messages)) {
@@ -32,6 +40,15 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const shouldConsumeRoleplayQuota = body.messages.filter((message) => message.role === "sales").length === 1;
+
+    if (shouldConsumeRoleplayQuota) {
+      await assertAiQuotaAvailable({
+        companyId: body.companyId ?? null,
+        feature: "roleplay",
+      });
+    }
+
     const response = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -64,11 +81,32 @@ export async function POST(request: NextRequest) {
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const message = data.choices?.[0]?.message?.content?.trim();
 
+    if (message && shouldConsumeRoleplayQuota) {
+      await writeAiUsageLog({
+        companyId: body.companyId ?? null,
+        userId: body.userId ?? null,
+        feature: "roleplay",
+        model: process.env.OPENAI_CHAT_MODEL ?? "gpt-4o-mini",
+      });
+    }
+
     return NextResponse.json({
       message: message || buildFallbackCustomerReply(body.scenario, body.messages),
       source: message ? "openai" : "fallback",
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof AiQuotaExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          feature: error.feature,
+          limit: error.limit,
+          used: error.used,
+        },
+        { status: 429 },
+      );
+    }
+
     return NextResponse.json({
       message: buildFallbackCustomerReply(body.scenario, body.messages),
       source: "fallback",

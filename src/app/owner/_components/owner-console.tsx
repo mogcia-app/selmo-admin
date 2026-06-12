@@ -1597,9 +1597,32 @@ function UserList({ users }: { users: AppUserProfile[] }) {
         <div key={user.uid} className="border-b border-[#eef1f5] pb-3 last:border-b-0 last:pb-0">
           <div className="font-bold text-[#20242c]">{user.name ?? "未設定"}</div>
           <div className="mt-1 text-[12px] text-[#7a808c]">{user.email ?? "メール未設定"}</div>
+          {user.role === "sales" ? <SalesDomainBadges user={user} /> : null}
         </div>
       ))}
     </div>
+  );
+}
+
+function SalesDomainBadges({ user }: { user: AppUserProfile }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-bold text-[#8a909b]">担当業務</span>
+      <SalesDomainBadge label="商談" enabled={user.enabledSalesDomains.meeting} />
+      <SalesDomainBadge label="テレアポ" enabled={user.enabledSalesDomains.teleapo} />
+    </div>
+  );
+}
+
+function SalesDomainBadge({ label, enabled }: { label: string; enabled: boolean }) {
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-[11px] font-black ${
+        enabled ? "bg-emerald-50 text-emerald-700" : "bg-[#f1f2f5] text-[#9aa1ad]"
+      }`}
+    >
+      {label}
+    </span>
   );
 }
 

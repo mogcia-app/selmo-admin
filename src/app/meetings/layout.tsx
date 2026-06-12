@@ -7,7 +7,7 @@ export default function MeetingsLayout({
   children: React.ReactNode;
 }) {
   return (
-    <RouteGuard allowedRoles={["sales", "admin"]}>
+    <RouteGuard allowedRoles={["sales", "admin"]} requiredSalesDomain="meeting">
       <DashboardShell variant="sales">{children}</DashboardShell>
     </RouteGuard>
   );

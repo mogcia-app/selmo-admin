@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/features/auth/auth-provider";
+import { canAccessSalesDomain } from "@/lib/firebase/auth";
 import {
   subscribeToVisibleKnowledgeItems,
   type KnowledgeItem,
@@ -28,44 +29,66 @@ export default function SalesDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const canUseMeeting = canAccessSalesDomain(profile, "meeting");
+  const canUseTeleapo = canAccessSalesDomain(profile, "teleapo");
 
   useEffect(() => {
     if (!profile?.uid || !profile.role) {
       return;
     }
 
-    const unsubscribers = [
-      subscribeToMeetings(
-        { role: profile.role, userId: profile.uid, companyId: profile.companyId },
-        (nextMeetings) => {
-          setMeetings(nextMeetings);
-          setIsLoading(false);
-        },
-        () => {
-          setErrorMessage("商談データの読み込みに失敗しました。");
-          setIsLoading(false);
-        },
-      ),
-      subscribeToVisibleKnowledgeItems(
-        profile.uid,
-        setKnowledgeItems,
-        () => setErrorMessage("ナレッジデータの読み込みに失敗しました。"),
-        profile.companyId,
-      ),
-      subscribeToRoleplayScenarios(
-        setRoleplayScenarios,
-        () => setErrorMessage("ロープレシナリオの読み込みに失敗しました。"),
-        profile.companyId,
-      ),
-      subscribeToRoleplayResults(
-        { userId: profile.uid, isAdmin: profile.role === "admin", companyId: profile.companyId },
-        setRoleplayResults,
-        () => setErrorMessage("ロープレ結果の読み込みに失敗しました。"),
-      ),
-    ];
+    const unsubscribers: Array<() => void> = [];
+
+    if (canUseMeeting) {
+      unsubscribers.push(
+        subscribeToMeetings(
+          { role: profile.role, userId: profile.uid, companyId: profile.companyId },
+          (nextMeetings) => {
+            setMeetings(nextMeetings);
+            setIsLoading(false);
+          },
+          () => {
+            setErrorMessage("商談データの読み込みに失敗しました。");
+            setIsLoading(false);
+          },
+        ),
+      );
+      unsubscribers.push(
+        subscribeToVisibleKnowledgeItems(
+          profile.uid,
+          setKnowledgeItems,
+          () => setErrorMessage("ナレッジデータの読み込みに失敗しました。"),
+          profile.companyId,
+        ),
+      );
+    } else {
+      setMeetings([]);
+      setKnowledgeItems([]);
+      setIsLoading(false);
+    }
+
+    if (canUseTeleapo) {
+      unsubscribers.push(
+        subscribeToRoleplayScenarios(
+          setRoleplayScenarios,
+          () => setErrorMessage("ロープレシナリオの読み込みに失敗しました。"),
+          profile.companyId,
+        ),
+      );
+      unsubscribers.push(
+        subscribeToRoleplayResults(
+          { userId: profile.uid, isAdmin: profile.role === "admin", companyId: profile.companyId },
+          setRoleplayResults,
+          () => setErrorMessage("ロープレ結果の読み込みに失敗しました。"),
+        ),
+      );
+    } else {
+      setRoleplayScenarios([]);
+      setRoleplayResults([]);
+    }
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [profile?.companyId, profile?.role, profile?.uid]);
+  }, [canUseMeeting, canUseTeleapo, profile?.companyId, profile?.role, profile?.uid]);
 
   const monthlyMeetings = useMemo(
     () => meetings.filter((meeting) => isCurrentMonth(meeting.recordedAt)),
@@ -130,9 +153,9 @@ export default function SalesDashboardPage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <PrimaryLink href="/meetings/upload" label="音声をアップロード" icon={<UploadIcon />} />
-              <PrimaryLink href="/sales/knowledge" label="ナレッジを探す" icon={<SearchIcon />} />
-              <PrimaryLink href="/sales/roleplay" label="ロープレ開始" icon={<RoleplayIcon />} />
+              {canUseMeeting ? <PrimaryLink href="/meetings/upload" label="音声をアップロード" icon={<UploadIcon />} /> : null}
+              {canUseMeeting ? <PrimaryLink href="/sales/knowledge" label="ナレッジを探す" icon={<SearchIcon />} /> : null}
+              {canUseTeleapo ? <PrimaryLink href="/sales/roleplay" label="ロープレ開始" icon={<RoleplayIcon />} /> : null}
             </div>
           </div>
         </section>
@@ -144,31 +167,47 @@ export default function SalesDashboardPage() {
         ) : null}
 
         <section className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="今月の商談件数"
-            value={isLoading ? "読み込み中" : `${monthlyMeetings.length}件`}
-            caption="自分がアップロードした商談"
-          />
-          <MetricCard
-            label="今月のアップロード件数"
-            value={isLoading ? "読み込み中" : `${monthlyMeetings.length}件`}
-            caption="音声登録ベースで集計"
-          />
-          <MetricCard
-            label="平均AIスコア"
-            value={averageRoleplayScore === null ? "集計準備中" : `${averageRoleplayScore}点`}
-            caption="ロープレ結果から集計中"
-          />
-          <MetricCard
-            label="ロープレ実施回数"
-            value={`${monthlyRoleplayResults.length}回`}
-            caption="今月保存された結果"
-          />
+          {canUseMeeting ? (
+            <>
+              <MetricCard
+                label="今月の商談件数"
+                value={isLoading ? "読み込み中" : `${monthlyMeetings.length}件`}
+                caption="自分がアップロードした商談"
+              />
+              <MetricCard
+                label="今月のアップロード件数"
+                value={isLoading ? "読み込み中" : `${monthlyMeetings.length}件`}
+                caption="音声登録ベースで集計"
+              />
+            </>
+          ) : null}
+          {canUseTeleapo ? (
+            <>
+              <MetricCard
+                label="平均AIスコア"
+                value={averageRoleplayScore === null ? "集計準備中" : `${averageRoleplayScore}点`}
+                caption="ロープレ結果から集計中"
+              />
+              <MetricCard
+                label="ロープレ実施回数"
+                value={`${monthlyRoleplayResults.length}回`}
+                caption="今月保存された結果"
+              />
+            </>
+          ) : null}
         </section>
+
+        {!canUseMeeting && !canUseTeleapo ? (
+          <section className="mt-5 rounded-[24px] border border-[#eceef4] bg-white px-6 py-10 text-center shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
+            <h2 className="text-[20px] font-bold text-[#171717]">利用できる営業業務がありません</h2>
+            <p className="mt-3 text-[14px] leading-7 text-[#7a808c]">管理者に担当業務の権限設定を確認してください。</p>
+          </section>
+        ) : null}
 
         <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_420px]">
           <div className="space-y-5">
-            <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
+            {canUseMeeting ? (
+              <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
               <SectionHeader title="最近の商談/通話" href="/meetings" />
               {recentMeetings.length === 0 ? (
                 <EmptyState
@@ -199,9 +238,11 @@ export default function SalesDashboardPage() {
                   ))}
                 </div>
               )}
-            </article>
+              </article>
+            ) : null}
 
-            <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
+            {canUseMeeting ? (
+              <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
               <SectionHeader title="最近使えるナレッジ" href="/sales/knowledge" />
               {recentKnowledge.length === 0 ? (
                 <EmptyState
@@ -234,11 +275,13 @@ export default function SalesDashboardPage() {
                   ))}
                 </div>
               )}
-            </article>
+              </article>
+            ) : null}
           </div>
 
           <aside className="space-y-5">
-            <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
+            {canUseMeeting ? (
+              <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
               <h2 className="text-[18px] font-bold text-[#171717]">ナレッジ検索</h2>
               <form onSubmit={handleKnowledgeSearch} className="mt-4">
                 <label className="relative block">
@@ -259,9 +302,11 @@ export default function SalesDashboardPage() {
                   検索する
                 </button>
               </form>
-            </article>
+              </article>
+            ) : null}
 
-            <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
+            {canUseTeleapo ? (
+              <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
               <h2 className="text-[18px] font-bold text-[#171717]">おすすめロープレ</h2>
               {recommendedScenario ? (
                 <div className="mt-4 rounded-[18px] border border-[#f3e3a5] bg-[#fffaf0] px-4 py-4">
@@ -284,7 +329,8 @@ export default function SalesDashboardPage() {
                   action="シナリオを見る"
                 />
               )}
-            </article>
+              </article>
+            ) : null}
 
             <article className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
               <h2 className="text-[18px] font-bold text-[#171717]">AIからの今週の改善コメント</h2>

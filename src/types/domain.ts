@@ -1,5 +1,9 @@
 export type UserRole = "owner" | "admin" | "sales";
 
+export type SalesDomain = "meeting" | "teleapo";
+
+export type EnabledSalesDomains = Record<SalesDomain, boolean>;
+
 export type CompanyPlan = "standard" | "pro" | "enterprise";
 
 export type CompanyStatus = "active" | "inactive" | "suspended";

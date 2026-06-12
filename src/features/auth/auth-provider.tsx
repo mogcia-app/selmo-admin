@@ -199,6 +199,10 @@ function readCachedProfile() {
       companyId: typeof parsed.companyId === "string" ? parsed.companyId : null,
       role: parsed.role,
       status: parsed.status,
+      enabledSalesDomains: {
+        meeting: typeof parsed.enabledSalesDomains?.meeting === "boolean" ? parsed.enabledSalesDomains.meeting : true,
+        teleapo: typeof parsed.enabledSalesDomains?.teleapo === "boolean" ? parsed.enabledSalesDomains.teleapo : true,
+      },
       workExperienceYears: typeof parsed.workExperienceYears === "number" ? parsed.workExperienceYears : null,
       workExperienceMonths: typeof parsed.workExperienceMonths === "number" ? parsed.workExperienceMonths : null,
       workExperienceLocked: parsed.workExperienceLocked === true,

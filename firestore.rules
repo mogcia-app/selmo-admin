@@ -54,6 +54,21 @@ service cloud.firestore {
       return isSignedIn() && companyId is string && companyId == currentCompanyId();
     }
 
+    function hasSalesDomain(domain) {
+      return isSignedIn()
+        && (!("enabledSalesDomains" in currentUser())
+          || !(domain in currentUser().enabledSalesDomains)
+          || currentUser().enabledSalesDomains[domain] == true);
+    }
+
+    function canUseMeetingDomain() {
+      return isOwnerRole() || isAdminRole() || (isSalesRole() && hasSalesDomain("meeting"));
+    }
+
+    function canUseTeleapoDomain() {
+      return isOwnerRole() || isAdminRole() || (isSalesRole() && hasSalesDomain("teleapo"));
+    }
+
     function canReadCompanyData(companyId) {
       return isOwnerRole() || sameCompany(companyId);
     }
@@ -140,16 +155,20 @@ service cloud.firestore {
     }
 
     match /meetings/{meetingId} {
-      allow read: if canReadCompanyData(resource.data.companyId)
+      allow read: if canUseMeetingDomain()
+        && canReadCompanyData(resource.data.companyId)
         && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
+        && canUseMeetingDomain()
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId);
-      allow update: if canAdminCompanyData(resource.data.companyId) || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId));
+      allow update: if canAdminCompanyData(resource.data.companyId)
+        || (canUseMeetingDomain() && isSelf(resource.data.userId) && sameCompany(resource.data.companyId));
       allow delete: if false;
 
       match /{subcollection}/{documentId} {
-        allow read: if canReadCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
+        allow read: if canUseMeetingDomain()
+          && canReadCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
         allow write: if canAdminCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
       }
     }
@@ -174,8 +193,9 @@ service cloud.firestore {
     }
 
     match /knowledgeCategories/{categoryId} {
-      allow read: if canReadCompanyData(resource.data.companyId);
+      allow read: if canUseMeetingDomain() && canReadCompanyData(resource.data.companyId);
       allow create: if isSignedIn()
+        && canUseMeetingDomain()
         && request.resource.data.createdBy == request.auth.uid
         && sameCompany(request.resource.data.companyId);
       allow update: if canAdminCompanyData(resource.data.companyId)
@@ -185,8 +205,9 @@ service cloud.firestore {
     }
 
     match /knowledgeProducts/{productId} {
-      allow read: if canReadCompanyData(resource.data.companyId);
+      allow read: if canUseMeetingDomain() && canReadCompanyData(resource.data.companyId);
       allow create: if isSignedIn()
+        && canUseMeetingDomain()
         && request.resource.data.createdBy == request.auth.uid
         && sameCompany(request.resource.data.companyId);
       allow update: if canAdminCompanyData(resource.data.companyId)
@@ -197,9 +218,11 @@ service cloud.firestore {
     }
 
     match /knowledgeItems/{knowledgeId} {
-      allow read: if canReadCompanyData(resource.data.companyId)
+      allow read: if canUseMeetingDomain()
+        && canReadCompanyData(resource.data.companyId)
         && (resource.data.scope == "shared" || resource.data.ownerId == request.auth.uid || isAdminRole() || isOwnerRole());
       allow create: if isSignedIn()
+        && canUseMeetingDomain()
         && request.resource.data.ownerId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
         && (request.resource.data.scope == "personal" || isAdminRole() || isOwnerRole());
@@ -214,16 +237,18 @@ service cloud.firestore {
     }
 
     match /roleplayScenarios/{scenarioId} {
-      allow read: if canReadCompanyData(resource.data.companyId);
+      allow read: if canUseTeleapoDomain() && canReadCompanyData(resource.data.companyId);
       allow create: if canAdminCompanyData(request.resource.data.companyId)
         && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if canAdminCompanyData(resource.data.companyId);
     }
 
     match /roleplayResults/{resultId} {
-      allow read: if canReadCompanyData(resource.data.companyId)
+      allow read: if canUseTeleapoDomain()
+        && canReadCompanyData(resource.data.companyId)
         && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
+        && canUseTeleapoDomain()
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId);
       allow update, delete: if false;

@@ -13,6 +13,10 @@ type UserDocument = {
   email: string;
   role: "admin" | "sales";
   status: "active" | "inactive";
+  enabledSalesDomains?: {
+    meeting: boolean;
+    teleapo: boolean;
+  };
   workExperienceYears?: number | null;
   workExperienceMonths?: number | null;
   workExperienceLocked?: boolean;

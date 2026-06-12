@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useAuth } from "@/features/auth/auth-provider";
+import { canAccessSalesDomain } from "@/lib/firebase/auth";
+import type { SalesDomain } from "@/types/domain";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -15,6 +17,8 @@ type NavItem = {
   href: string;
   label: string;
   num: string;
+  domain?: SalesDomain;
+  icon?: () => React.ReactNode;
 };
 
 const adminSections: Array<{ label: string; items: NavItem[] }> = [
@@ -85,10 +89,10 @@ const salesSections: Array<{ label: string; items: NavItem[] }> = [
     label: "01 — Dashboard",
     items: [
       { href: "/sales/dashboard", label: "ダッシュボード", num: "01" },
-      { href: "/meetings", label: "打ち合わせ一覧", num: "02" },
-      { href: "/meetings/upload", label: "アップロード", num: "03" },
-      { href: "/sales/knowledge", label: "ナレッジ", num: "04" },
-      { href: "/sales/roleplay", label: "AIロープレ", num: "05" },
+      { href: "/meetings", label: "打ち合わせ一覧", num: "02", domain: "meeting", icon: ListIcon },
+      { href: "/meetings/upload", label: "アップロード", num: "03", domain: "meeting", icon: UploadIcon },
+      { href: "/sales/knowledge", label: "ナレッジ", num: "04", domain: "meeting", icon: ManualIcon },
+      { href: "/sales/roleplay", label: "AIロープレ", num: "05", domain: "teleapo", icon: RoleplayIcon },
     ],
   },
 ];
@@ -101,7 +105,7 @@ export function DashboardShell({ children, variant }: DashboardShellProps) {
       ? ownerSections
       : variant === "admin"
         ? adminSections
-        : salesSections;
+        : buildSalesSections(profile);
   const initials = (profile?.name ?? profile?.email ?? "S").slice(0, 1);
   const currentLabel =
     sections
@@ -150,7 +154,7 @@ export function DashboardShell({ children, variant }: DashboardShellProps) {
               <div className="space-y-2">
                 {sections[0].items.map((item, index) => {
                   const isActive = isNavItemActive(pathname, item.href);
-                  const Icon = salesIconMap[index] ?? MenuDotIcon;
+                  const Icon = item.icon ?? salesIconMap[index] ?? MenuDotIcon;
 
                   return (
                     <Link
@@ -324,14 +328,14 @@ export function DashboardShell({ children, variant }: DashboardShellProps) {
                   ＋ ユーザー登録
                 </Link>
               </>
-            ) : (
+            ) : canAccessSalesDomain(profile, "meeting") ? (
               <Link
                 href="/meetings/upload"
                 className="rounded-[14px] bg-[#ffc400] px-4 py-[9px] text-[12.5px] font-bold text-[#171717] transition hover:bg-[#f0ba00]"
               >
                 ＋ 打ち合わせアップロード
               </Link>
-            )}
+            ) : null}
           </div>
         </header>
 
@@ -365,6 +369,13 @@ function isNavItemActive(pathname: string, href: string) {
   }
 
   return pathname === href;
+}
+
+function buildSalesSections(profile: ReturnType<typeof useAuth>["profile"]) {
+  return salesSections.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !item.domain || canAccessSalesDomain(profile, item.domain)),
+  }));
 }
 
 const salesIconMap = [

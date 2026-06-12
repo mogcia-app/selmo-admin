@@ -1621,6 +1621,8 @@ function TenantUserDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [enabledMeeting, setEnabledMeeting] = useState(true);
+  const [enabledTeleapo, setEnabledTeleapo] = useState(true);
   const [workExperienceYears, setWorkExperienceYears] = useState("");
   const [workExperienceMonths, setWorkExperienceMonths] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -1651,6 +1653,13 @@ function TenantUserDialog({
         name,
         email,
         password,
+        enabledSalesDomains:
+          role === "sales"
+            ? {
+                meeting: enabledMeeting,
+                teleapo: enabledTeleapo,
+              }
+            : undefined,
         workExperienceYears: workExperience?.ok ? workExperience.value.years : null,
         workExperienceMonths: workExperience?.ok ? workExperience.value.months : null,
       });
@@ -1690,10 +1699,18 @@ function TenantUserDialog({
           <Field label="メールアドレス" value={email} onChange={setEmail} placeholder="taro@example.com" />
           <Field label="初期パスワード" value={password} onChange={setPassword} placeholder="6文字以上" type="password" />
           {role === "sales" ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="勤務年数（年）" value={workExperienceYears} onChange={setWorkExperienceYears} placeholder="例: 3" type="number" />
-              <Field label="勤務年数（月）" value={workExperienceMonths} onChange={setWorkExperienceMonths} placeholder="0〜11" type="number" />
-            </div>
+            <>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="勤務年数（年）" value={workExperienceYears} onChange={setWorkExperienceYears} placeholder="例: 3" type="number" />
+                <Field label="勤務年数（月）" value={workExperienceMonths} onChange={setWorkExperienceMonths} placeholder="0〜11" type="number" />
+              </div>
+              <SalesDomainCheckboxes
+                meeting={enabledMeeting}
+                teleapo={enabledTeleapo}
+                onMeetingChange={setEnabledMeeting}
+                onTeleapoChange={setEnabledTeleapo}
+              />
+            </>
           ) : null}
           {error ? <div className="border border-red-200 bg-red-50 px-4 py-3 text-[13px] font-bold text-red-700">{error}</div> : null}
           <div className="flex justify-end gap-3 pt-2">
@@ -1705,6 +1722,44 @@ function TenantUserDialog({
         </form>
       </section>
     </div>
+  );
+}
+
+function SalesDomainCheckboxes({
+  meeting,
+  teleapo,
+  onMeetingChange,
+  onTeleapoChange,
+}: {
+  meeting: boolean;
+  teleapo: boolean;
+  onMeetingChange: (value: boolean) => void;
+  onTeleapoChange: (value: boolean) => void;
+}) {
+  return (
+    <fieldset className="border border-[#eadfbc] bg-[#fffdf7] px-4 py-3">
+      <legend className="px-1 text-[12px] font-bold text-[#343b48]">担当業務</legend>
+      <div className="mt-2 flex flex-wrap gap-4">
+        <label className="inline-flex items-center gap-2 text-[13px] font-bold text-[#343b48]">
+          <input
+            type="checkbox"
+            checked={meeting}
+            onChange={(event) => onMeetingChange(event.target.checked)}
+            className="h-4 w-4 accent-[#ffc400]"
+          />
+          商談
+        </label>
+        <label className="inline-flex items-center gap-2 text-[13px] font-bold text-[#343b48]">
+          <input
+            type="checkbox"
+            checked={teleapo}
+            onChange={(event) => onTeleapoChange(event.target.checked)}
+            className="h-4 w-4 accent-[#ffc400]"
+          />
+          テレアポ
+        </label>
+      </div>
+    </fieldset>
   );
 }
 

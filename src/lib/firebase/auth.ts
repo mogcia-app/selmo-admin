@@ -23,7 +23,7 @@ import {
 } from "firebase/firestore";
 
 import { assertFirebaseClient } from "@/lib/firebase/client";
-import type { UserRole, UserStatus } from "@/types/domain";
+import type { EnabledSalesDomains, SalesDomain, UserRole, UserStatus } from "@/types/domain";
 
 export type AppUserProfile = {
   uid: string;
@@ -32,6 +32,7 @@ export type AppUserProfile = {
   companyId: string | null;
   role: UserRole;
   status: UserStatus;
+  enabledSalesDomains: EnabledSalesDomains;
   workExperienceYears: number | null;
   workExperienceMonths: number | null;
   workExperienceLocked: boolean;
@@ -128,6 +129,10 @@ export async function registerUser({
     email,
     role,
     status: "active",
+    enabledSalesDomains: {
+      meeting: true,
+      teleapo: true,
+    },
     createdAt: serverTimestamp(),
     lastLoginAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -180,6 +185,7 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
     workExperienceYears?: number;
     workExperienceMonths?: number;
     workExperienceLocked?: boolean;
+    enabledSalesDomains?: Partial<EnabledSalesDomains>;
     createdAt?: { toDate?: () => Date };
     lastLoginAt?: { toDate?: () => Date };
   };
@@ -195,6 +201,7 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
     companyId: data.companyId ?? null,
     role: data.role,
     status: data.status ?? "active",
+    enabledSalesDomains: readEnabledSalesDomains(data.enabledSalesDomains),
     workExperienceYears: readNullableNumber(data.workExperienceYears),
     workExperienceMonths: readNullableNumber(data.workExperienceMonths),
     workExperienceLocked: data.workExperienceLocked === true,
@@ -224,6 +231,7 @@ export function subscribeToUserProfiles(
               workExperienceYears?: number;
               workExperienceMonths?: number;
               workExperienceLocked?: boolean;
+              enabledSalesDomains?: Partial<EnabledSalesDomains>;
               createdAt?: { toDate?: () => Date };
               lastLoginAt?: { toDate?: () => Date };
             };
@@ -237,6 +245,7 @@ export function subscribeToUserProfiles(
               companyId: data.companyId ?? null,
               role: data.role,
               status: data.status ?? "active",
+              enabledSalesDomains: readEnabledSalesDomains(data.enabledSalesDomains),
               workExperienceYears: readNullableNumber(data.workExperienceYears),
               workExperienceMonths: readNullableNumber(data.workExperienceMonths),
               workExperienceLocked: data.workExperienceLocked === true,
@@ -257,6 +266,25 @@ function toDate(value: { toDate?: () => Date } | undefined) {
 
 function readNullableNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function readEnabledSalesDomains(value: unknown): EnabledSalesDomains {
+  if (!value || typeof value !== "object") {
+    return { meeting: true, teleapo: true };
+  }
+
+  const domains = value as Partial<Record<SalesDomain, unknown>>;
+
+  return {
+    meeting: typeof domains.meeting === "boolean" ? domains.meeting : true,
+    teleapo: typeof domains.teleapo === "boolean" ? domains.teleapo : true,
+  };
+}
+
+export function canAccessSalesDomain(profile: AppUserProfile | null, domain: SalesDomain) {
+  if (!profile) return false;
+  if (profile.role === "admin" || profile.role === "owner") return true;
+  return profile.enabledSalesDomains[domain];
 }
 
 async function recordLoginEvent(input: {

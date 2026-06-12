@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { UserRole } from "@/types/domain";
+import type { EnabledSalesDomains, UserRole } from "@/types/domain";
 
 type CreateUserRequest = {
   companyId?: unknown;
@@ -8,6 +8,7 @@ type CreateUserRequest = {
   name?: unknown;
   email?: unknown;
   password?: unknown;
+  enabledSalesDomains?: unknown;
   workExperienceYears?: unknown;
   workExperienceMonths?: unknown;
 };
@@ -18,6 +19,9 @@ type FirestoreValue = {
   booleanValue?: boolean;
   timestampValue?: string;
   nullValue?: null;
+  mapValue?: {
+    fields?: Record<string, FirestoreValue>;
+  };
 };
 
 type FirestoreDocument = {
@@ -59,7 +63,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
 
-    const { companyId, email, name, password, role, workExperienceMonths, workExperienceYears } = parsed.value;
+    const { companyId, email, enabledSalesDomains, name, password, role, workExperienceMonths, workExperienceYears } = parsed.value;
 
     if (actor.role === "admin" && (role !== "sales" || actor.companyId !== companyId)) {
       return NextResponse.json({ error: "自社の営業マンのみ追加できます。" }, { status: 403 });
@@ -83,6 +87,7 @@ export async function POST(request: Request) {
         companyId,
         createdBy: actorUid,
         email,
+        enabledSalesDomains,
         name,
         role,
         status: "active",
@@ -180,6 +185,7 @@ async function writeUserDocument(
     companyId: string;
     createdBy: string;
     email: string;
+    enabledSalesDomains: EnabledSalesDomains;
     name: string;
     role: "admin" | "sales";
     status: "active";
@@ -202,6 +208,14 @@ async function writeUserDocument(
         role: { stringValue: input.role },
         name: { stringValue: input.name },
         email: { stringValue: input.email },
+        enabledSalesDomains: {
+          mapValue: {
+            fields: {
+              meeting: { booleanValue: input.enabledSalesDomains.meeting },
+              teleapo: { booleanValue: input.enabledSalesDomains.teleapo },
+            },
+          },
+        },
         status: { stringValue: input.status },
         createdBy: { stringValue: input.createdBy },
         workExperienceYears: input.workExperienceYears === null ? { nullValue: null } : { integerValue: String(input.workExperienceYears) },
@@ -227,6 +241,7 @@ function parseCreateUserRequest(body: CreateUserRequest):
         role: "admin" | "sales";
         name: string;
         email: string;
+        enabledSalesDomains: EnabledSalesDomains;
         password: string;
         workExperienceYears: number | null;
         workExperienceMonths: number | null;
@@ -238,6 +253,7 @@ function parseCreateUserRequest(body: CreateUserRequest):
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
+  const enabledSalesDomains = parseEnabledSalesDomains(body.enabledSalesDomains);
   const workExperienceYears = parseNonNegativeInteger(body.workExperienceYears);
   const workExperienceMonths = parseNonNegativeInteger(body.workExperienceMonths);
 
@@ -257,6 +273,7 @@ function parseCreateUserRequest(body: CreateUserRequest):
       role,
       name,
       email,
+      enabledSalesDomains: role === "sales" ? enabledSalesDomains : { meeting: true, teleapo: true },
       password,
       workExperienceYears: role === "sales" ? workExperienceYears : null,
       workExperienceMonths: role === "sales" ? workExperienceMonths : null,
@@ -271,6 +288,19 @@ function readUserFields(document: FirestoreDocument) {
     companyId: fields.companyId?.stringValue,
     role: fields.role?.stringValue as UserRole | undefined,
     status: fields.status?.stringValue,
+  };
+}
+
+function parseEnabledSalesDomains(value: unknown): EnabledSalesDomains {
+  if (!value || typeof value !== "object") {
+    return { meeting: true, teleapo: true };
+  }
+
+  const domains = value as Partial<Record<keyof EnabledSalesDomains, unknown>>;
+
+  return {
+    meeting: domains.meeting === true,
+    teleapo: domains.teleapo === true,
   };
 }
 

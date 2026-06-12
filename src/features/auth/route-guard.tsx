@@ -6,14 +6,16 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { useAuth } from "@/features/auth/auth-provider";
-import type { UserRole } from "@/types/domain";
+import { canAccessSalesDomain } from "@/lib/firebase/auth";
+import type { SalesDomain, UserRole } from "@/types/domain";
 
 type RouteGuardProps = {
   allowedRoles?: UserRole[];
+  requiredSalesDomain?: SalesDomain;
   children: React.ReactNode;
 };
 
-export function RouteGuard({ allowedRoles, children }: RouteGuardProps) {
+export function RouteGuard({ allowedRoles, requiredSalesDomain, children }: RouteGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, isFirebaseReady, isLoading, profile, missingEnvKeys } = useAuth();
@@ -31,7 +33,11 @@ export function RouteGuard({ allowedRoles, children }: RouteGuardProps) {
     if (allowedRoles && profile && !allowedRoles.includes(profile.role)) {
       router.replace(getRoleHomePath(profile.role));
     }
-  }, [allowedRoles, isAuthenticated, isLoading, pathname, profile, router]);
+
+    if (profile && requiredSalesDomain && !canAccessSalesDomain(profile, requiredSalesDomain)) {
+      router.replace("/sales/dashboard");
+    }
+  }, [allowedRoles, isAuthenticated, isLoading, pathname, profile, requiredSalesDomain, router]);
 
   if (isLoading) {
     return <AuthLoadingScreen />;
@@ -55,6 +61,15 @@ export function RouteGuard({ allowedRoles, children }: RouteGuardProps) {
       <GuardMessage
         title="この画面にはアクセスできません"
         body={`現在の権限は ${profile.role} です。閲覧可能なダッシュボードへ移動します。`}
+      />
+    );
+  }
+
+  if (profile && requiredSalesDomain && !canAccessSalesDomain(profile, requiredSalesDomain)) {
+    return (
+      <GuardMessage
+        title="この機能にはアクセスできません"
+        body="利用できる営業業務の権限が付与されていません。管理者に確認してください。"
       />
     );
   }

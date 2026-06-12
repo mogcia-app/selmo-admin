@@ -4,7 +4,7 @@ import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
 
 import { writeAdminAuditLogSafely } from "@/lib/firebase/audit";
 import { assertFirebaseClient, firebaseAuth } from "@/lib/firebase/client";
-import type { UserRole } from "@/types/domain";
+import type { EnabledSalesDomains, UserRole } from "@/types/domain";
 
 export type CreateTenantUserInput = {
   companyId: string;
@@ -12,6 +12,7 @@ export type CreateTenantUserInput = {
   name: string;
   email: string;
   password: string;
+  enabledSalesDomains?: EnabledSalesDomains;
   workExperienceYears?: number | null;
   workExperienceMonths?: number | null;
 };
@@ -50,6 +51,7 @@ export async function createTenantUser(input: CreateTenantUserInput) {
       role: input.role,
       email: input.email,
       name: input.name,
+      enabledSalesDomains: input.enabledSalesDomains ?? null,
       workExperienceYears: input.workExperienceYears ?? null,
       workExperienceMonths: input.workExperienceMonths ?? null,
     },

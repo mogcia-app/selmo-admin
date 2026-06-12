@@ -2,7 +2,7 @@
 
 import {
   createUserWithEmailAndPassword,
-  browserLocalPersistence,
+  inMemoryPersistence,
   onAuthStateChanged,
   setPersistence,
   signInWithEmailAndPassword,
@@ -28,6 +28,7 @@ import type { EnabledSalesDomains, SalesDomain, UserRole, UserStatus } from "@/t
 export type AppUserProfile = {
   uid: string;
   email: string | null;
+  authEmail: string | null;
   name: string | null;
   companyId: string | null;
   role: UserRole;
@@ -51,7 +52,7 @@ type RegisterUserInput = {
 
 export async function enableAuthPersistence() {
   const { firebaseAuth } = assertFirebaseClient();
-  await setPersistence(firebaseAuth, browserLocalPersistence);
+  await setPersistence(firebaseAuth, inMemoryPersistence);
 }
 
 export async function signInWithEmail(email: string, password: string) {
@@ -178,6 +179,7 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
 
   const data = snapshot.data() as {
     email?: string;
+    authEmail?: string;
     name?: string;
     companyId?: string;
     role?: UserRole;
@@ -197,6 +199,7 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
   return {
     uid,
     email: data.email ?? null,
+    authEmail: data.authEmail ?? data.email ?? null,
     name: data.name ?? null,
     companyId: data.companyId ?? null,
     role: data.role,
@@ -224,6 +227,7 @@ export function subscribeToUserProfiles(
           .map((userSnapshot) => {
             const data = userSnapshot.data() as {
               email?: string;
+              authEmail?: string;
               name?: string;
               companyId?: string;
               role?: UserRole;
@@ -241,6 +245,7 @@ export function subscribeToUserProfiles(
             return {
               uid: userSnapshot.id,
               email: data.email ?? null,
+              authEmail: data.authEmail ?? data.email ?? null,
               name: data.name ?? null,
               companyId: data.companyId ?? null,
               role: data.role,

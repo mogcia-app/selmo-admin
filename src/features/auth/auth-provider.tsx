@@ -44,7 +44,6 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const AUTH_PROFILE_CACHE_KEY = "selmo.auth.profile";
 const AUTH_READY_EXTRA_DELAY_MS = 3000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -55,12 +54,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isFirebaseConfigured) {
       setIsLoading(false);
       return;
-    }
-
-    const cachedProfile = readCachedProfile();
-
-    if (cachedProfile) {
-      setProfile(cachedProfile);
     }
 
     let isActive = true;
@@ -90,7 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           setProfile(nextProfile);
-          writeCachedProfile(nextProfile);
           finishLoadingAfterDelay();
         });
       })
@@ -100,7 +92,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setProfile(null);
-        writeCachedProfile(null);
         finishLoadingAfterDelay();
       });
 
@@ -126,7 +117,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const result = await signInWithEmail(email, password);
           setProfile(result.profile);
-          writeCachedProfile(result.profile);
           return result.profile;
         } finally {
           setIsLoading(false);
@@ -137,7 +127,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const result = await registerUser(input);
           setProfile(result.profile);
-          writeCachedProfile(result.profile);
           return result.profile;
         } finally {
           setIsLoading(false);
@@ -148,7 +137,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           await signOutUser();
           setProfile(null);
-          writeCachedProfile(null);
         } finally {
           setIsLoading(false);
         }
@@ -168,61 +156,4 @@ export function useAuth() {
   }
 
   return context;
-}
-
-function readCachedProfile() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const value = window.localStorage.getItem(AUTH_PROFILE_CACHE_KEY);
-
-    if (!value) {
-      return null;
-    }
-
-    const parsed = JSON.parse(value) as Partial<AppUserProfile>;
-
-    if (
-      typeof parsed.uid !== "string" ||
-      (parsed.role !== "owner" && parsed.role !== "admin" && parsed.role !== "sales") ||
-      (parsed.status !== "active" && parsed.status !== "inactive")
-    ) {
-      return null;
-    }
-
-    return {
-      uid: parsed.uid,
-      email: typeof parsed.email === "string" ? parsed.email : null,
-      name: typeof parsed.name === "string" ? parsed.name : null,
-      companyId: typeof parsed.companyId === "string" ? parsed.companyId : null,
-      role: parsed.role,
-      status: parsed.status,
-      enabledSalesDomains: {
-        meeting: typeof parsed.enabledSalesDomains?.meeting === "boolean" ? parsed.enabledSalesDomains.meeting : true,
-        teleapo: typeof parsed.enabledSalesDomains?.teleapo === "boolean" ? parsed.enabledSalesDomains.teleapo : true,
-      },
-      workExperienceYears: typeof parsed.workExperienceYears === "number" ? parsed.workExperienceYears : null,
-      workExperienceMonths: typeof parsed.workExperienceMonths === "number" ? parsed.workExperienceMonths : null,
-      workExperienceLocked: parsed.workExperienceLocked === true,
-      createdAt: null,
-      lastLoginAt: null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedProfile(profile: AppUserProfile | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!profile) {
-    window.localStorage.removeItem(AUTH_PROFILE_CACHE_KEY);
-    return;
-  }
-
-  window.localStorage.setItem(AUTH_PROFILE_CACHE_KEY, JSON.stringify(profile));
 }

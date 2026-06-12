@@ -71,6 +71,7 @@ function UserTable({
     uid: string;
     name: string | null;
     email: string | null;
+    authEmail: string | null;
     role: string;
     companyId: string | null;
     status: "active" | "inactive";
@@ -114,6 +115,7 @@ function UserRow({
     uid: string;
     name: string | null;
     email: string | null;
+    authEmail: string | null;
     role: string;
     companyId: string | null;
     status: "active" | "inactive";
@@ -156,7 +158,12 @@ function UserRow({
   return (
     <tr className="border-b border-[#eef1f5] text-[13px] last:border-b-0">
       <td className="px-3 py-4 font-bold text-[#20242c]">{user.name ?? "未設定"}</td>
-      <td className="px-3 py-4 text-[#596273]">{user.email ?? "未設定"}</td>
+      <td className="px-3 py-4 text-[#596273]">
+        <div>{user.email ?? "未設定"}</div>
+        {user.authEmail && user.authEmail !== user.email ? (
+          <div className="mt-0.5 font-mono text-[11px] text-[#a07400]">login: {user.authEmail}</div>
+        ) : null}
+      </td>
       <td className="px-3 py-4 text-[#596273]">{user.role}</td>
       <td className="px-3 py-4 text-[#596273]">
         {user.role !== "sales" ? (

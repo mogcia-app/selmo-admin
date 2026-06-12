@@ -914,7 +914,7 @@ function UserAdminRow({ user, companies }: { user: AppUserProfile; companies: Co
     <tr className="border-b border-[#eef1f5] text-[13px]">
       <td className="px-3 py-4">
         <div className="font-bold text-[#20242c]">{user.name ?? "未設定"}</div>
-        <div className="mt-1 text-[12px] text-[#7a808c]">{user.email ?? "メール未設定"}</div>
+        <UserEmailLines user={user} />
       </td>
       <td className="px-3 py-4 text-[#343b48]">{company?.companyName ?? user.companyId ?? "未紐付け"}</td>
       <td className="px-3 py-4">
@@ -1596,10 +1596,21 @@ function UserList({ users }: { users: AppUserProfile[] }) {
       {users.map((user) => (
         <div key={user.uid} className="border-b border-[#eef1f5] pb-3 last:border-b-0 last:pb-0">
           <div className="font-bold text-[#20242c]">{user.name ?? "未設定"}</div>
-          <div className="mt-1 text-[12px] text-[#7a808c]">{user.email ?? "メール未設定"}</div>
+          <UserEmailLines user={user} />
           {user.role === "sales" ? <SalesDomainBadges user={user} /> : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+function UserEmailLines({ user }: { user: AppUserProfile }) {
+  const authEmail = user.authEmail && user.authEmail !== user.email ? user.authEmail : null;
+
+  return (
+    <div className="mt-1 text-[12px] text-[#7a808c]">
+      <div>{user.email ?? "メール未設定"}</div>
+      {authEmail ? <div className="mt-0.5 font-mono text-[11px] text-[#a07400]">login: {authEmail}</div> : null}
     </div>
   );
 }

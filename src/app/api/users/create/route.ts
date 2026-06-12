@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "指定された会社が見つかりません。" }, { status: 404 });
     }
 
-    const authUser = await createAuthUser({ email, name, password });
+    const authUser = await createAuthUser({ companyId, email, name, password, role });
 
     await writeUserDocument(
       authUser.localId,
@@ -87,6 +87,7 @@ export async function POST(request: Request) {
         companyId,
         createdBy: actorUid,
         email,
+        authEmail: authUser.email,
         enabledSalesDomains,
         name,
         role,
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
       token,
     );
 
-    return NextResponse.json({ uid: authUser.localId });
+    return NextResponse.json({ uid: authUser.localId, authEmail: authUser.email });
   } catch (error) {
     if (error instanceof ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -130,17 +131,46 @@ async function lookupUidByIdToken(token: string) {
 }
 
 async function createAuthUser(input: {
+  companyId: string;
   email: string;
   name: string;
   password: string;
+  role: "admin" | "sales";
 }) {
+  const fallbackEmail = buildDemoAliasEmail(input.email, input.role, input.companyId);
+  const emailsToTry = [input.email, fallbackEmail];
+
+  for (const email of emailsToTry) {
+    const created = await tryCreateAuthUser({
+      displayName: input.name,
+      email,
+      password: input.password,
+    });
+
+    if (created.status === "created") {
+      return { localId: created.localId, email };
+    }
+
+    if (created.error !== "EMAIL_EXISTS") {
+      throw new ApiError("Firebase Authユーザーの作成に失敗しました。", 502);
+    }
+  }
+
+  throw new ApiError("このメールアドレスのdemo用ログインメールも既に登録されています。もう一度追加してください。", 409);
+}
+
+async function tryCreateAuthUser(input: {
+  displayName: string;
+  email: string;
+  password: string;
+}): Promise<{ status: "created"; localId: string } | { status: "failed"; error?: string }> {
   const response = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        displayName: input.name,
+        displayName: input.displayName,
         email: input.email,
         password: input.password,
         returnSecureToken: false,
@@ -153,14 +183,22 @@ async function createAuthUser(input: {
   };
 
   if (!response.ok || !data.localId) {
-    if (data.error?.message === "EMAIL_EXISTS") {
-      throw new ApiError("このメールアドレスは既に登録されています。", 409);
-    }
-
-    throw new ApiError("Firebase Authユーザーの作成に失敗しました。", 502);
+    return { status: "failed", error: data.error?.message };
   }
 
-  return { localId: data.localId };
+  return { status: "created", localId: data.localId };
+}
+
+function buildDemoAliasEmail(email: string, role: "admin" | "sales", companyId: string) {
+  const atIndex = email.lastIndexOf("@");
+  if (atIndex <= 0) return email;
+
+  const local = email.slice(0, atIndex);
+  const domain = email.slice(atIndex + 1);
+  const companyTag = companyId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8) || "tenant";
+  const entropy = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+  return `${local}+demo-${role}-${companyTag}-${entropy}@${domain}`;
 }
 
 async function getFirestoreDocument(path: string, token: string) {
@@ -185,6 +223,7 @@ async function writeUserDocument(
     companyId: string;
     createdBy: string;
     email: string;
+    authEmail: string;
     enabledSalesDomains: EnabledSalesDomains;
     name: string;
     role: "admin" | "sales";
@@ -208,6 +247,7 @@ async function writeUserDocument(
         role: { stringValue: input.role },
         name: { stringValue: input.name },
         email: { stringValue: input.email },
+        authEmail: { stringValue: input.authEmail },
         enabledSalesDomains: {
           mapValue: {
             fields: {

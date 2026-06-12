@@ -32,7 +32,7 @@ export async function createTenantUser(input: CreateTenantUserInput) {
     },
     body: JSON.stringify(input),
   });
-  const data = (await response.json()) as { uid?: string; error?: string };
+  const data = (await response.json()) as { uid?: string; authEmail?: string; error?: string };
 
   if (!response.ok) {
     throw new Error(data.error ?? "ユーザー追加に失敗しました。");
@@ -50,6 +50,7 @@ export async function createTenantUser(input: CreateTenantUserInput) {
     metadata: {
       role: input.role,
       email: input.email,
+      authEmail: data.authEmail ?? input.email,
       name: input.name,
       enabledSalesDomains: input.enabledSalesDomains ?? null,
       workExperienceYears: input.workExperienceYears ?? null,

@@ -1,8 +1,9 @@
 "use client";
 
 import {
+  browserLocalPersistence,
+  browserSessionPersistence,
   createUserWithEmailAndPassword,
-  inMemoryPersistence,
   onAuthStateChanged,
   setPersistence,
   signInWithEmailAndPassword,
@@ -50,22 +51,54 @@ type RegisterUserInput = {
   companyName?: string;
 };
 
-export async function enableAuthPersistence() {
+export async function enableAuthPersistence(rememberMe = true) {
   const { firebaseAuth } = assertFirebaseClient();
-  await setPersistence(firebaseAuth, inMemoryPersistence);
+  await setPersistence(
+    firebaseAuth,
+    rememberMe ? browserLocalPersistence : browserSessionPersistence,
+  );
 }
 
-export async function signInWithEmail(email: string, password: string) {
+export async function signInWithEmail(email: string, password: string, rememberMe = true) {
   const { firebaseAuth, firestore } = assertFirebaseClient();
-  await enableAuthPersistence();
+  await enableAuthPersistence(rememberMe);
 
   const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
-  await updateDoc(doc(firestore, "users", credential.user.uid), {
+  const profile = await fetchUserProfile(credential.user.uid);
+  if (!profile) {
+    await signOut(firebaseAuth);
+    await recordLoginEventSafely({
+      status: "failed",
+      uid: credential.user.uid,
+      email,
+      role: null,
+      companyId: null,
+      reason: "profile_not_found",
+    });
+    throw new Error("auth/profile-not-found");
+  }
+
+  if (profile.status !== "active") {
+    await signOut(firebaseAuth);
+    await recordLoginEventSafely({
+      status: "failed",
+      uid: credential.user.uid,
+      email,
+      role: profile.role,
+      companyId: profile.companyId,
+      reason: "profile_inactive",
+    });
+    throw new Error("auth/profile-inactive");
+  }
+
+  void updateDoc(doc(firestore, "users", credential.user.uid), {
     lastLoginAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+  }).catch((error) => {
+    console.warn("Failed to update last login timestamp.", error);
   });
-  const profile = await fetchUserProfile(credential.user.uid);
-  await recordLoginEvent({
+
+  void recordLoginEventSafely({
     status: "success",
     uid: credential.user.uid,
     email,
@@ -313,4 +346,12 @@ async function recordLoginEvent(input: {
     variant: input.variant ?? null,
     createdAt: serverTimestamp(),
   });
+}
+
+async function recordLoginEventSafely(input: Parameters<typeof recordLoginEvent>[0]) {
+  try {
+    await recordLoginEvent(input);
+  } catch (error) {
+    console.warn("Failed to record login event.", error);
+  }
 }

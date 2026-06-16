@@ -14,6 +14,11 @@ const errorMessageMap: Record<string, string> = {
   "auth/too-many-requests": "ログイン試行が多すぎます。少し待ってから再度お試しください。",
 };
 
+const appErrorMessageMap: Record<string, string> = {
+  "auth/profile-not-found": "ログイン用のユーザー情報が見つかりません。管理者に確認してください。",
+  "auth/profile-inactive": "このアカウントは現在停止中です。管理者に確認してください。",
+};
+
 const ownerLoginEmail = "marina.ishida@mogcia.com";
 
 export function LoginForm({
@@ -54,8 +59,20 @@ export function LoginForm({
     }
 
     try {
-      const nextProfile = await signIn(email, password);
-      if (isOwner && (nextProfile?.email?.toLowerCase() !== ownerLoginEmail || nextProfile.role !== "owner")) {
+      const nextProfile = await signIn(email, password, rememberMe);
+      if (!nextProfile) {
+        throw new Error("auth/profile-not-found");
+      }
+
+      const nextProfileAuthEmail = nextProfile?.authEmail?.toLowerCase();
+      const nextProfileEmail = nextProfile?.email?.toLowerCase();
+      if (
+        isOwner
+        && (
+          (nextProfileAuthEmail !== ownerLoginEmail && nextProfileEmail !== ownerLoginEmail)
+          || nextProfile.role !== "owner"
+        )
+      ) {
         await signOut();
         void recordLoginFailure({ email, reason: "owner_role_not_allowed", variant });
         setErrorMessage("この運営管理画面にログインできるアカウントではありません。");
@@ -76,6 +93,12 @@ export function LoginForm({
       if (error instanceof FirebaseError) {
         void recordLoginFailure({ email, reason: error.code, variant });
         setErrorMessage(errorMessageMap[error.code] ?? "ログインに失敗しました。設定とアカウントを確認してください。");
+        return;
+      }
+
+      if (error instanceof Error && error.message in appErrorMessageMap) {
+        void recordLoginFailure({ email, reason: error.message, variant });
+        setErrorMessage(appErrorMessageMap[error.message]);
         return;
       }
 

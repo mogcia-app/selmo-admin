@@ -31,7 +31,7 @@ type AuthContextValue = {
   missingEnvKeys: string[];
   isAuthenticated: boolean;
   profile: AppUserProfile | null;
-  signIn: (email: string, password: string) => Promise<AppUserProfile | null>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<AppUserProfile | null>;
   signUp: (input: {
     name: string;
     email: string;
@@ -112,10 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       missingEnvKeys: missingFirebaseEnvKeys,
       isAuthenticated: Boolean(profile),
       profile,
-      signIn: async (email, password) => {
+      signIn: async (email, password, rememberMe = true) => {
         setIsLoading(true);
         try {
-          const result = await signInWithEmail(email, password);
+          const result = await signInWithEmail(email, password, rememberMe);
           setProfile(result.profile);
           return result.profile;
         } finally {

@@ -1,7 +1,10 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 
+import {
+  defaultMonthlyRoleplayQuota,
+  defaultMonthlyTranscriptionQuota,
+} from "@/lib/ai-quota";
 import { getAdminFirestore } from "@/lib/server/firebase-admin";
-import type { CompanyPlan } from "@/types/domain";
 
 export type AiQuotaFeature = "transcription" | "roleplay";
 
@@ -15,15 +18,8 @@ export type AiUsageLogFeature =
 type CompanyQuotaRecord = {
   companyId: string;
   companyName: string;
-  plan: CompanyPlan;
   monthlyTranscriptionQuota: number | null;
   monthlyRoleplayQuota: number | null;
-};
-
-const defaultMonthlyAiQuotas: Record<CompanyPlan, number | null> = {
-  standard: 15,
-  pro: 30,
-  enterprise: null,
 };
 
 export async function readMeetingQuotaContext(meetingId: string) {
@@ -38,6 +34,7 @@ export async function readMeetingQuotaContext(meetingId: string) {
   return {
     companyId: readNullableString(data.companyId),
     userId: readNullableString(data.userId),
+    audioDurationSec: readNullableNumber(data.audioDurationSec),
   };
 }
 
@@ -74,8 +71,9 @@ export async function assertAiQuotaAvailable(input: {
 
   if (limit !== null) {
     const used = await countMonthlyUsage(input.companyId, input.feature);
+    const isExceeded = input.feature === "transcription" ? used > limit : used >= limit;
 
-    if (used >= limit) {
+    if (isExceeded) {
       const label = input.feature === "transcription" ? "音声文字起こし" : "ロープレ";
       throw new AiQuotaExceededError(`${label}の月間利用上限（${limit}回）に達しています。プラン変更または上限回数の変更を行ってください。`, {
         feature: input.feature,
@@ -127,15 +125,12 @@ async function readCompanyQuota(companyId: string): Promise<CompanyQuotaRecord> 
   }
 
   const data = snapshot.data() ?? {};
-  const plan = readCompanyPlan(data.plan);
-  const fallback = defaultMonthlyAiQuotas[plan];
 
   return {
     companyId,
     companyName: readString(data.companyName, "未設定の会社"),
-    plan,
-    monthlyTranscriptionQuota: readQuota(data.monthlyTranscriptionQuota, fallback),
-    monthlyRoleplayQuota: readQuota(data.monthlyRoleplayQuota, fallback),
+    monthlyTranscriptionQuota: readQuota(data.monthlyTranscriptionQuota, defaultMonthlyTranscriptionQuota),
+    monthlyRoleplayQuota: readQuota(data.monthlyRoleplayQuota, defaultMonthlyRoleplayQuota),
   };
 }
 
@@ -145,7 +140,7 @@ async function countMonthlyUsage(companyId: string, feature: AiQuotaFeature) {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const snapshot = await db
-    .collection("aiUsageLogs")
+    .collection(feature === "transcription" ? "meetings" : "roleplayResults")
     .where("companyId", "==", companyId)
     .get();
 
@@ -154,8 +149,6 @@ async function countMonthlyUsage(companyId: string, feature: AiQuotaFeature) {
     const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : null;
 
     return (
-      data.feature === feature &&
-      data.status === "success" &&
       createdAt !== null &&
       createdAt >= monthStart &&
       createdAt < nextMonthStart
@@ -163,11 +156,11 @@ async function countMonthlyUsage(companyId: string, feature: AiQuotaFeature) {
   }).length;
 }
 
-function readCompanyPlan(value: unknown): CompanyPlan {
-  return value === "pro" || value === "enterprise" || value === "standard" ? value : "standard";
-}
-
 function readQuota(value: unknown, fallback: number | null) {
+  if (value === null) {
+    return null;
+  }
+
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
@@ -181,6 +174,10 @@ function readString(value: unknown, fallback = "") {
 
 function readNullableString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function readNullableNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export class AiQuotaExceededError extends Error {

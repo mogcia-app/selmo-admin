@@ -24,6 +24,11 @@ import {
 } from "firebase/firestore";
 
 import { assertFirebaseClient } from "@/lib/firebase/client";
+import {
+  defaultMonthlyRoleplayQuota,
+  defaultMonthlyTranscriptionQuota,
+} from "@/lib/ai-quota";
+import { defaultUploadDurationLimitMinutes } from "@/lib/upload-duration-limit";
 import type { EnabledSalesDomains, SalesDomain, UserRole, UserStatus } from "@/types/domain";
 
 export type AppUserProfile = {
@@ -151,6 +156,9 @@ export async function registerUser({
       companyName: companyName?.trim() || name,
       plan: "standard",
       status: "active",
+      monthlyTranscriptionQuota: defaultMonthlyTranscriptionQuota,
+      monthlyRoleplayQuota: defaultMonthlyRoleplayQuota,
+      uploadDurationLimitMinutes: defaultUploadDurationLimitMinutes,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });

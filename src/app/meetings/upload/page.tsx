@@ -7,9 +7,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/features/auth/auth-provider";
 import { subscribeToKnowledgeProducts, type KnowledgeProduct } from "@/lib/firebase/knowledge";
-import { createMeeting, subscribeToMeetings, type MeetingRecord } from "@/lib/firebase/meetings";
+import { createMeeting, fetchCompanyUploadDurationLimitMinutes, subscribeToMeetings, type MeetingRecord } from "@/lib/firebase/meetings";
+import {
+  defaultUploadDurationLimitMinutes,
+  getUploadDurationLimitErrorMessage,
+  isWithinUploadDurationLimit,
+} from "@/lib/upload-duration-limit";
 
-const maxRecommendedDurationSec = 120 * 60;
 const maxOpenAiTranscriptionFileSizeBytes = 25 * 1024 * 1024;
 const supportedAudioTypes = new Set([
   "audio/mpeg",
@@ -37,6 +41,9 @@ export default function MeetingUploadPage() {
   const [memo, setMemo] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [detectedDurationSec, setDetectedDurationSec] = useState<number | null>(null);
+  const [uploadDurationLimitMinutes, setUploadDurationLimitMinutes] = useState(
+    defaultUploadDurationLimitMinutes,
+  );
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -72,6 +79,29 @@ export default function MeetingUploadPage() {
     return unsubscribe;
   }, [profile?.companyId, profile?.role, profile?.uid]);
 
+  useEffect(() => {
+    if (!isFirebaseReady) {
+      return;
+    }
+
+    let ignore = false;
+    fetchCompanyUploadDurationLimitMinutes(profile?.companyId)
+      .then((limitMinutes) => {
+        if (!ignore) {
+          setUploadDurationLimitMinutes(limitMinutes);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setUploadDurationLimitMinutes(defaultUploadDurationLimitMinutes);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [isFirebaseReady, profile?.companyId]);
+
   const productOptions = useMemo(() => products.map((product) => product.name), [products]);
   const monthlyUploadCount = useMemo(
     () => meetings.filter((meeting) => isCurrentMonth(meeting.recordedAt)).length,
@@ -97,6 +127,11 @@ export default function MeetingUploadPage() {
 
     if (!selectedFile) {
       setErrorMessage("文字起こし検証のため、音声ファイルを選択してください。");
+      return;
+    }
+
+    if (!isWithinUploadDurationLimit(detectedDurationSec, uploadDurationLimitMinutes)) {
+      setErrorMessage(getUploadDurationLimitErrorMessage(uploadDurationLimitMinutes));
       return;
     }
 
@@ -130,6 +165,8 @@ export default function MeetingUploadPage() {
         setErrorMessage(
           `保存に失敗しました。${error.code === "permission-denied" ? "Firestoreルール" : "Firebase設定"}を確認してください。`,
         );
+      } else if (error instanceof Error) {
+        setErrorMessage(error.message);
       } else {
         setErrorMessage("保存に失敗しました。時間を置いて再度お試しください。");
       }
@@ -172,7 +209,7 @@ export default function MeetingUploadPage() {
                 音声ファイル
               </h2>
               <p className="text-[14px] text-[#7a808c]">
-                mp3 / wav / m4a に対応しています
+                mp3 / wav / m4a、1ファイル{uploadDurationLimitMinutes}分まで
               </p>
             </div>
           </div>
@@ -227,9 +264,14 @@ export default function MeetingUploadPage() {
                 try {
                   const durationSec = await readAudioDuration(file);
                   setDetectedDurationSec(durationSec);
+                  if (!isWithinUploadDurationLimit(durationSec, uploadDurationLimitMinutes)) {
+                    setSelectedFile(null);
+                    event.target.value = "";
+                    setErrorMessage(getUploadDurationLimitErrorMessage(uploadDurationLimitMinutes));
+                  }
                 } catch {
                   setErrorMessage(
-                    "ファイルは選択できましたが、音声時間を取得できませんでした。アップロード自体は続行できます。",
+                    "ファイルは選択できましたが、音声時間を取得できませんでした。別の音声ファイルで再度お試しください。",
                   );
                 }
               }}
@@ -266,13 +308,6 @@ export default function MeetingUploadPage() {
                   : "音声ファイルを選択してください。"}
             </div>
           </div>
-
-          {detectedDurationSec !== null && detectedDurationSec > maxRecommendedDurationSec ? (
-            <AlertBox>
-              120分を超える音声です。文字起こし検証の観点では価値がありますが、
-              まずは短めの音声でも1本通して精度確認するのがおすすめです。
-            </AlertBox>
-          ) : null}
 
           {selectedFile && selectedFile.size > maxOpenAiTranscriptionFileSizeBytes ? (
             <AlertBox>
@@ -406,7 +441,7 @@ export default function MeetingUploadPage() {
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || isLoading}
+                disabled={isSubmitting || isLoading || !selectedFile || detectedDurationSec === null}
                 className="rounded-[14px] bg-[#171717] px-5 py-3 text-[14px] font-medium text-white transition hover:bg-[#2a2d33] disabled:cursor-not-allowed disabled:bg-[#9ca3af]"
               >
                 {isSubmitting ? `アップロード中... ${uploadProgress}%` : "音声をアップロード"}

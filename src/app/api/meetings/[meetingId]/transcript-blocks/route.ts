@@ -7,6 +7,10 @@ import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 
 import { readMeetingQuotaContext, writeAiUsageLog } from "@/lib/server/ai-usage-quota";
+import {
+  UploadDurationLimitExceededError,
+  assertMeetingUploadDurationLimit,
+} from "@/lib/server/upload-duration-limit";
 
 export const runtime = "nodejs";
 
@@ -68,6 +72,10 @@ export async function POST(
       ? (body.model as "gpt-4o-mini-transcribe" | "gpt-4o-transcribe")
       : "gpt-4o-mini-transcribe";
     const quotaContext = await readMeetingQuotaContext(meetingId);
+    await assertMeetingUploadDurationLimit({
+      companyId: quotaContext.companyId,
+      audioDurationSec: quotaContext.audioDurationSec ?? body.audioDurationSec,
+    });
 
     const audioResponse = await fetchWithTimeout(body.audioDownloadUrl, {
       timeoutMs: remoteFetchTimeoutMs,
@@ -157,6 +165,16 @@ export async function POST(
       await rm(tempDir, { recursive: true, force: true });
     }
   } catch (error) {
+    if (error instanceof UploadDurationLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          limitMinutes: error.limitMinutes,
+        },
+        { status: 400 },
+      );
+    }
+
     const message =
       error instanceof Error ? error.message : "本文ブロック生成に失敗しました。";
 

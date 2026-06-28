@@ -22,6 +22,11 @@ import {
 } from "firebase/storage";
 
 import { assertFirebaseClient } from "@/lib/firebase/client";
+import {
+  getUploadDurationLimitErrorMessage,
+  isWithinUploadDurationLimit,
+  normalizeUploadDurationLimitMinutes,
+} from "@/lib/upload-duration-limit";
 import type { MeetingOutcome, ProcessingStatus } from "@/types/domain";
 
 export type MeetingTranscriptionSegment = {
@@ -133,6 +138,16 @@ export type UpdateMeetingMetadataInput = {
 
 export async function createMeeting(input: CreateMeetingInput) {
   const { firestore, firebaseStorage } = assertFirebaseClient();
+  const uploadDurationLimitMinutes = await readCompanyUploadDurationLimitMinutes(
+    input.companyId,
+  );
+
+  if (input.audioFile) {
+    if (!isWithinUploadDurationLimit(input.audioDurationSec, uploadDurationLimitMinutes)) {
+      throw new Error(getUploadDurationLimitErrorMessage(uploadDurationLimitMinutes));
+    }
+  }
+
   const meetingRef = doc(collection(firestore, "meetings"));
   const now = serverTimestamp();
 
@@ -203,6 +218,11 @@ export async function createMeeting(input: CreateMeetingInput) {
 
     throw error;
   }
+}
+
+export async function fetchCompanyUploadDurationLimitMinutes(companyId?: string | null) {
+  const { firestore } = assertFirebaseClient();
+  return readCompanyUploadDurationLimitMinutes(companyId, firestore);
 }
 
 export async function fetchMeeting(meetingId: string) {
@@ -432,6 +452,19 @@ export async function updateMeetingMetadata(
 function buildMeetingAudioPath(userId: string, meetingId: string, fileName: string) {
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   return `meetings/${userId}/${meetingId}/${Date.now()}-${safeName}`;
+}
+
+async function readCompanyUploadDurationLimitMinutes(
+  companyId: string | null | undefined,
+  firestoreInstance = assertFirebaseClient().firestore,
+) {
+  if (!companyId) {
+    return normalizeUploadDurationLimitMinutes(null);
+  }
+
+  const snapshot = await getDoc(doc(firestoreInstance, "companies", companyId));
+  const data = snapshot.data() as Record<string, unknown> | undefined;
+  return normalizeUploadDurationLimitMinutes(data?.uploadDurationLimitMinutes);
 }
 
 function uploadWithProgress(

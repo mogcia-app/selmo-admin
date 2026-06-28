@@ -18,6 +18,15 @@ import {
 
 import { writeAdminAuditLogSafely } from "@/lib/firebase/audit";
 import { assertFirebaseClient } from "@/lib/firebase/client";
+import {
+  defaultMonthlyRoleplayQuota,
+  defaultMonthlyTranscriptionQuota,
+} from "@/lib/ai-quota";
+import {
+  defaultUploadDurationLimitMinutes,
+  normalizeUploadDurationLimitMinutes,
+  type UploadDurationLimitMinutes,
+} from "@/lib/upload-duration-limit";
 import type { CompanyPlan, CompanyStatus, UserRole, UserStatus } from "@/types/domain";
 
 export type CompanyRecord = {
@@ -27,6 +36,7 @@ export type CompanyRecord = {
   status: CompanyStatus;
   monthlyTranscriptionQuota: number | null;
   monthlyRoleplayQuota: number | null;
+  uploadDurationLimitMinutes: UploadDurationLimitMinutes;
   monthlyFee: number | null;
   billingCurrency: "JPY";
   contractStartDate: Date | null;
@@ -163,17 +173,19 @@ export async function createCompany(input: {
   status: CompanyStatus;
   monthlyTranscriptionQuota?: number | null;
   monthlyRoleplayQuota?: number | null;
+  uploadDurationLimitMinutes?: number | null;
 }) {
   const { firestore } = assertFirebaseClient();
   const companyRef = doc(collection(firestore, "companies"));
-  const defaultQuota = defaultMonthlyAiQuotas[input.plan];
 
   await setDoc(companyRef, {
     companyName: input.companyName,
     plan: input.plan,
     status: input.status,
-    monthlyTranscriptionQuota: input.monthlyTranscriptionQuota ?? defaultQuota,
-    monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultQuota,
+    monthlyTranscriptionQuota: input.monthlyTranscriptionQuota ?? defaultMonthlyTranscriptionQuota,
+    monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultMonthlyRoleplayQuota,
+    uploadDurationLimitMinutes:
+      normalizeUploadDurationLimitMinutes(input.uploadDurationLimitMinutes),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -187,8 +199,10 @@ export async function createCompany(input: {
       companyName: input.companyName,
       plan: input.plan,
       status: input.status,
-      monthlyTranscriptionQuota: input.monthlyTranscriptionQuota ?? defaultQuota,
-      monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultQuota,
+      monthlyTranscriptionQuota: input.monthlyTranscriptionQuota ?? defaultMonthlyTranscriptionQuota,
+      monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultMonthlyRoleplayQuota,
+      uploadDurationLimitMinutes:
+        normalizeUploadDurationLimitMinutes(input.uploadDurationLimitMinutes),
     },
   });
 
@@ -197,7 +211,7 @@ export async function createCompany(input: {
 
 export async function updateCompany(
   companyId: string,
-  input: Partial<Pick<CompanyRecord, "companyName" | "plan" | "status" | "monthlyTranscriptionQuota" | "monthlyRoleplayQuota" | "monthlyFee" | "billingCurrency" | "contractStartDate">>,
+  input: Partial<Pick<CompanyRecord, "companyName" | "plan" | "status" | "monthlyTranscriptionQuota" | "monthlyRoleplayQuota" | "uploadDurationLimitMinutes" | "monthlyFee" | "billingCurrency" | "contractStartDate">>,
 ) {
   const { firestore } = assertFirebaseClient();
 
@@ -485,8 +499,11 @@ function mapCompany(snapshot: QueryDocumentSnapshot): CompanyRecord {
     companyName: readString(data.companyName, "未設定の会社"),
     plan,
     status,
-    monthlyTranscriptionQuota: readQuota(data.monthlyTranscriptionQuota, defaultMonthlyAiQuotas[plan]),
-    monthlyRoleplayQuota: readQuota(data.monthlyRoleplayQuota, defaultMonthlyAiQuotas[plan]),
+    monthlyTranscriptionQuota: readQuota(data.monthlyTranscriptionQuota, defaultMonthlyTranscriptionQuota),
+    monthlyRoleplayQuota: readQuota(data.monthlyRoleplayQuota, defaultMonthlyRoleplayQuota),
+    uploadDurationLimitMinutes: normalizeUploadDurationLimitMinutes(
+      data.uploadDurationLimitMinutes ?? defaultUploadDurationLimitMinutes,
+    ),
     monthlyFee: readNullableNumber(data.monthlyFee),
     billingCurrency: "JPY",
     contractStartDate: readDate(data.contractStartDate) ?? readDate(data.createdAt),
@@ -653,15 +670,13 @@ function readBoolean(value: unknown) {
 }
 
 function readQuota(value: unknown, fallback: number | null) {
+  if (value === null) {
+    return null;
+  }
+
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
 
   return Math.max(0, Math.floor(value));
 }
-
-export const defaultMonthlyAiQuotas: Record<CompanyPlan, number | null> = {
-  standard: 15,
-  pro: 30,
-  enterprise: null,
-};

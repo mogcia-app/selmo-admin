@@ -6,12 +6,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { subscribeToUserProfiles, type AppUserProfile } from "@/lib/firebase/auth";
+import {
+  defaultMonthlyRoleplayQuota,
+  defaultMonthlyTranscriptionQuota,
+  getTotalMonthlyAiQuota,
+} from "@/lib/ai-quota";
 import { subscribeToAllKnowledgeItems, type KnowledgeItem } from "@/lib/firebase/knowledge";
 import { subscribeToMeetings, type MeetingRecord } from "@/lib/firebase/meetings";
 import {
   createAnnouncement,
   createCompany,
-  defaultMonthlyAiQuotas,
   saveAiPrompt,
   subscribeToAiChargeEvents,
   subscribeToAiUsageLogs,
@@ -38,6 +42,11 @@ import {
 } from "@/lib/firebase/owner";
 import { subscribeToRoleplayResults, type RoleplayResult } from "@/lib/firebase/roleplay";
 import { createTenantUser, updateSalesWorkExperience } from "@/lib/firebase/user-management";
+import {
+  defaultUploadDurationLimitMinutes,
+  uploadDurationLimitOptions,
+  type UploadDurationLimitMinutes,
+} from "@/lib/upload-duration-limit";
 import type { CompanyPlan, CompanyStatus, UserRole, UserStatus } from "@/types/domain";
 
 type OwnerData = {
@@ -91,7 +100,14 @@ export function OwnerCompanies() {
   const [companyName, setCompanyName] = useState("");
   const [plan, setPlan] = useState<CompanyPlan>("standard");
   const [status, setStatus] = useState<CompanyStatus>("active");
-  const [monthlyAiQuota, setMonthlyAiQuota] = useState("15");
+  const [monthlyTranscriptionQuota, setMonthlyTranscriptionQuota] = useState(
+    String(defaultMonthlyTranscriptionQuota),
+  );
+  const [monthlyRoleplayQuota, setMonthlyRoleplayQuota] = useState(
+    String(defaultMonthlyRoleplayQuota),
+  );
+  const [uploadDurationLimitMinutes, setUploadDurationLimitMinutes] =
+    useState<UploadDurationLimitMinutes>(defaultUploadDurationLimitMinutes);
   const [isSaving, setIsSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -101,18 +117,20 @@ export function OwnerCompanies() {
     if (!trimmedName) return;
     setIsSaving(true);
     try {
-      const parsedMonthlyAiQuota = plan === "enterprise" ? parseQuota(monthlyAiQuota) : defaultMonthlyAiQuotas[plan];
       await createCompany({
         companyName: trimmedName,
         plan,
         status,
-        monthlyTranscriptionQuota: parsedMonthlyAiQuota,
-        monthlyRoleplayQuota: parsedMonthlyAiQuota,
+        monthlyTranscriptionQuota: parseQuota(monthlyTranscriptionQuota) ?? defaultMonthlyTranscriptionQuota,
+        monthlyRoleplayQuota: parseQuota(monthlyRoleplayQuota) ?? defaultMonthlyRoleplayQuota,
+        uploadDurationLimitMinutes,
       });
       setCompanyName("");
       setPlan("standard");
       setStatus("active");
-      setMonthlyAiQuota("15");
+      setMonthlyTranscriptionQuota(String(defaultMonthlyTranscriptionQuota));
+      setMonthlyRoleplayQuota(String(defaultMonthlyRoleplayQuota));
+      setUploadDurationLimitMinutes(defaultUploadDurationLimitMinutes);
       setDialogOpen(false);
     } finally {
       setIsSaving(false);
@@ -145,6 +163,7 @@ export function OwnerCompanies() {
                 <th className="px-3 py-3">会社</th>
                 <th className="px-3 py-3">プラン</th>
                 <th className="px-3 py-3">AI回数</th>
+                <th className="px-3 py-3">1ファイル上限</th>
                 <th className="px-3 py-3">月額料金</th>
                 <th className="px-3 py-3">契約開始日</th>
                 <th className="px-3 py-3">ステータス</th>
@@ -178,21 +197,30 @@ export function OwnerCompanies() {
               <Select
                 label="プラン"
                 value={plan}
-                onChange={(value) => {
-                  const nextPlan = value as CompanyPlan;
-                  setPlan(nextPlan);
-                  const defaultQuota = defaultMonthlyAiQuotas[nextPlan];
-                  setMonthlyAiQuota(defaultQuota === null ? "" : String(defaultQuota));
-                }}
+                onChange={(value) => setPlan(value as CompanyPlan)}
                 options={planOptions}
               />
-              <Field
-                label="月間AI回数"
-                value={monthlyAiQuota}
-                onChange={setMonthlyAiQuota}
-                placeholder={plan === "enterprise" ? "例: 100" : String(defaultMonthlyAiQuotas[plan] ?? "")}
-                type="number"
-                disabled={plan !== "enterprise"}
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field
+                  label="商談/テレアポ分析上限"
+                  value={monthlyTranscriptionQuota}
+                  onChange={setMonthlyTranscriptionQuota}
+                  placeholder={String(defaultMonthlyTranscriptionQuota)}
+                  type="number"
+                />
+                <Field
+                  label="AIロープレ上限"
+                  value={monthlyRoleplayQuota}
+                  onChange={setMonthlyRoleplayQuota}
+                  placeholder={String(defaultMonthlyRoleplayQuota)}
+                  type="number"
+                />
+              </div>
+              <Select
+                label="1ファイル上限"
+                value={String(uploadDurationLimitMinutes)}
+                onChange={(value) => setUploadDurationLimitMinutes(Number(value) as UploadDurationLimitMinutes)}
+                options={uploadDurationLimitSelectOptions}
               />
               <Select label="ステータス" value={status} onChange={(value) => setStatus(value as CompanyStatus)} options={companyStatusOptions} />
               <div className="flex justify-end gap-3 pt-2">
@@ -241,6 +269,7 @@ export function OwnerCompanyDetail({ companyId }: { companyId: string }) {
         <Metric label="契約プラン" value={formatPlan(row.company.plan)} note="companies.plan" />
         <Metric label="文字起こし上限" value={formatQuota(row.company.monthlyTranscriptionQuota)} note="月間回数" />
         <Metric label="ロープレ上限" value={formatQuota(row.company.monthlyRoleplayQuota)} note="月間回数" />
+        <Metric label="1ファイル上限" value={formatUploadDurationLimit(row.company.uploadDurationLimitMinutes)} note="companies.uploadDurationLimitMinutes" />
         <Metric label="契約ステータス" value={row.company.status} note="companies.status" />
         <Metric label="管理者数" value={`${admins.length}名`} note="role: admin" />
         <Metric label="営業マン数" value={`${sales.length}名`} note="role: sales" />
@@ -253,8 +282,10 @@ export function OwnerCompanyDetail({ companyId }: { companyId: string }) {
             items={[
               ["会社名", row.company.companyName],
               ["契約プラン", formatPlan(row.company.plan)],
+              ["合計AI回数", formatQuota(getTotalMonthlyAiQuota(row.company))],
               ["文字起こし上限", formatQuota(row.company.monthlyTranscriptionQuota)],
               ["ロープレ上限", formatQuota(row.company.monthlyRoleplayQuota)],
+              ["1ファイル上限", formatUploadDurationLimit(row.company.uploadDurationLimitMinutes)],
               ["月額料金", formatYenOrPending(row.company.monthlyFee)],
               ["契約開始日", formatDate(row.company.contractStartDate)],
               ["契約ステータス", row.company.status],
@@ -450,7 +481,7 @@ export function OwnerUsage() {
         <Metric label="今月の音声アップロード件数" value={`${total.monthlyAudioUploads}件`} note="audioFileNameあり" />
         <Metric label="今月の音声分析件数" value={`${total.monthlyAudioAnalyses}件`} note="処理完了/分析済み" />
         <Metric label="今月の音声合計時間" value={formatMinutes(total.monthlyAudioDurationSec)} note="audioDurationSec 合計" />
-        <Metric label="今月のAI分析回数" value={`${total.monthlyAiEvents}回`} note="分析ステータスから概算" />
+        <Metric label="今月のAI利用回数" value={`${total.monthlyAiEvents}回`} note="商談/テレアポ分析 + AIロープレ" />
         <Metric label="今月のロープレ回数" value={`${total.monthlyRoleplayCount}回`} note="roleplayResults" />
         <Metric label="今月のナレッジ検索回数" value={`${total.monthlyKnowledgeSearchCount}回`} note="knowledgeSearchEvents" />
         <Metric label="今月のStorage使用量" value={formatBytes(total.storageBytes)} note="音声ファイルサイズ合計" />
@@ -702,9 +733,8 @@ function useCompanyUsageRows(data: OwnerData) {
         const monthlyMeetings = companyMeetings.filter((meeting) => isCurrentMonth(meeting.recordedAt));
         const monthlyRoleplayResults = companyRoleplayResults.filter((result) => isCurrentMonth(result.createdAt));
         const monthlyAiUsageLogs = companyAiUsageLogs.filter((log) => isCurrentMonth(log.createdAt));
-        const monthlyTranscriptionUses = countSuccessfulAiUsage(monthlyAiUsageLogs, "transcription");
-        const monthlyRoleplayUses =
-          countSuccessfulAiUsage(monthlyAiUsageLogs, "roleplay") || monthlyRoleplayResults.length;
+        const monthlyTranscriptionUses = monthlyMeetings.length;
+        const monthlyRoleplayUses = monthlyRoleplayResults.length;
         const monthlyKnowledgeSearchEvents = companyKnowledgeSearchEvents.filter((event) => isCurrentMonth(event.createdAt));
         const lastUsedAt = getLatestDate([
           ...companyMeetings.map((meeting) => meeting.recordedAt),
@@ -737,7 +767,7 @@ function useCompanyUsageRows(data: OwnerData) {
           monthlyAudioUploads: monthlyMeetings.filter((meeting) => Boolean(meeting.audioFileName)).length,
           monthlyAudioAnalyses: monthlyMeetings.filter(isAudioAnalysisCompleted).length,
           monthlyAudioDurationSec,
-          monthlyAiEvents: monthlyAiUsageLogs.length || monthlyMeetings.reduce((sum, meeting) => sum + countMeetingAiEvents(meeting), 0),
+          monthlyAiEvents: monthlyTranscriptionUses + monthlyRoleplayUses,
           monthlyRoleplayCount: monthlyRoleplayResults.length,
           monthlyTranscriptionUses,
           monthlyRoleplayUses,
@@ -757,6 +787,8 @@ function useCompanyUsageRows(data: OwnerData) {
 function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[number] }) {
   const [plan, setPlan] = useState<CompanyPlan>(row.company.plan);
   const [status, setStatus] = useState<CompanyStatus>(row.company.status);
+  const [uploadDurationLimitMinutes, setUploadDurationLimitMinutes] =
+    useState<UploadDurationLimitMinutes>(row.company.uploadDurationLimitMinutes);
   const [monthlyTranscriptionQuota, setMonthlyTranscriptionQuota] = useState(row.company.monthlyTranscriptionQuota?.toString() ?? "");
   const [monthlyRoleplayQuota, setMonthlyRoleplayQuota] = useState(row.company.monthlyRoleplayQuota?.toString() ?? "");
   const [monthlyFee, setMonthlyFee] = useState(row.company.monthlyFee?.toString() ?? "");
@@ -765,11 +797,12 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
   useEffect(() => {
     setPlan(row.company.plan);
     setStatus(row.company.status);
+    setUploadDurationLimitMinutes(row.company.uploadDurationLimitMinutes);
     setMonthlyTranscriptionQuota(row.company.monthlyTranscriptionQuota?.toString() ?? "");
     setMonthlyRoleplayQuota(row.company.monthlyRoleplayQuota?.toString() ?? "");
     setMonthlyFee(row.company.monthlyFee?.toString() ?? "");
     setContractStartDate(formatDateInput(row.company.contractStartDate));
-  }, [row.company.contractStartDate, row.company.monthlyFee, row.company.monthlyRoleplayQuota, row.company.monthlyTranscriptionQuota, row.company.plan, row.company.status]);
+  }, [row.company.contractStartDate, row.company.monthlyFee, row.company.monthlyRoleplayQuota, row.company.monthlyTranscriptionQuota, row.company.plan, row.company.status, row.company.uploadDurationLimitMinutes]);
 
   async function persist(input: Parameters<typeof updateCompany>[1]) {
     await updateCompany(row.company.id, input);
@@ -788,18 +821,8 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
           value={plan}
           onChange={(value) => {
             const nextPlan = value as CompanyPlan;
-            const defaultQuota = defaultMonthlyAiQuotas[nextPlan];
             setPlan(nextPlan);
-            if (defaultQuota !== null) {
-              setMonthlyTranscriptionQuota(String(defaultQuota));
-              setMonthlyRoleplayQuota(String(defaultQuota));
-            }
-            void persist({
-              plan: nextPlan,
-              ...(defaultQuota !== null
-                ? { monthlyTranscriptionQuota: defaultQuota, monthlyRoleplayQuota: defaultQuota }
-                : {}),
-            });
+            void persist({ plan: nextPlan });
           }}
           options={planOptions}
         />
@@ -825,7 +848,20 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
             aria-label={`${row.company.companyName} ロープレ月間上限`}
           />
         </div>
-        <div className="mt-1 text-[11px] text-[#8a909b]">文字起こし / ロープレ</div>
+        <div className="mt-1 text-[11px] text-[#8a909b]">
+          文字起こし / ロープレ ・ 合計 {formatQuota(getTotalMonthlyAiQuota(row.company))}
+        </div>
+      </td>
+      <td className="px-3 py-4">
+        <InlineSelect
+          value={String(uploadDurationLimitMinutes)}
+          onChange={(value) => {
+            const nextLimit = Number(value) as UploadDurationLimitMinutes;
+            setUploadDurationLimitMinutes(nextLimit);
+            void persist({ uploadDurationLimitMinutes: nextLimit });
+          }}
+          options={uploadDurationLimitSelectOptions}
+        />
       </td>
       <td className="px-3 py-4 text-[#343b48]">
         <input
@@ -1989,10 +2025,6 @@ function countMeetingAiEvents(meeting: MeetingRecord) {
   ].filter((status) => status === "completed").length;
 }
 
-function countSuccessfulAiUsage(logs: AiUsageLogRecord[], feature: string) {
-  return logs.filter((log) => log.feature === feature && log.status !== "failed").length;
-}
-
 function calculateUsageRate(used: number, limit: number | null) {
   if (limit === null || limit <= 0) return null;
   return Math.round((used / limit) * 100);
@@ -2111,7 +2143,7 @@ function buildUserUsageRows(data: OwnerData, companyFilter: string): UserUsageRo
       monthlyAudioUploads: meetings.filter((meeting) => Boolean(meeting.audioFileName)).length,
       monthlyAudioAnalyses: meetings.filter(isAudioAnalysisCompleted).length,
       monthlyAudioDurationSec: meetings.reduce((sum, meeting) => sum + (meeting.audioDurationSec ?? 0), 0),
-      monthlyAiEvents: aiUsageLogs.length || meetings.reduce((sum, meeting) => sum + countMeetingAiEvents(meeting), 0),
+      monthlyAiEvents: meetings.length + roleplayResults.length,
       monthlyRoleplayCount: roleplayResults.length,
       monthlyKnowledgeSearchCount: knowledgeSearchEvents.length,
       monthlyAiCostUsd: cost.total,
@@ -2489,6 +2521,10 @@ function formatQuota(value: number | null) {
   return value === null ? "要相談" : `${value}回`;
 }
 
+function formatUploadDurationLimit(value: number) {
+  return `${value}分`;
+}
+
 function formatWorkExperience(years: number | null, months: number | null) {
   if (years === null || months === null) return "未設定";
   return `${years}年${months}ヶ月`;
@@ -2564,6 +2600,11 @@ const planOptions = [
   { value: "pro", label: "Pro" },
   { value: "enterprise", label: "Enterprise" },
 ];
+
+const uploadDurationLimitSelectOptions = uploadDurationLimitOptions.map((minutes) => ({
+  value: String(minutes),
+  label: `${minutes}分`,
+}));
 
 const companyStatusOptions = [
   { value: "active", label: "active" },

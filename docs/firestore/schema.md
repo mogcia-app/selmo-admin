@@ -26,6 +26,23 @@ type UserDocument = {
 };
 ```
 
+### `companies/{companyId}`
+
+```ts
+type CompanyDocument = {
+  companyName: string;
+  plan: "standard" | "pro" | "enterprise";
+  status: "active" | "inactive" | "suspended";
+  monthlyTranscriptionQuota: number; // デフォルト10
+  monthlyRoleplayQuota: number; // デフォルト15
+  uploadDurationLimitMinutes?: 60 | 120 | 180 | 240; // 未設定時は60分
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
+```
+
+AI利用回数の契約表示は `monthlyTranscriptionQuota + monthlyRoleplayQuota` です。上限判定は別々に行い、商談/テレアポ分析は今月作成された `meetings` 件数、AIロープレは今月作成された `roleplayResults` 件数で数えます。`null` は無制限扱いですが、通常運用では数値を保存します。
+
 ### `meetings/{meetingId}`
 
 ```ts

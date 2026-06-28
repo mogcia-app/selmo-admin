@@ -12,6 +12,10 @@ import {
   readMeetingQuotaContext,
   writeAiUsageLog,
 } from "@/lib/server/ai-usage-quota";
+import {
+  UploadDurationLimitExceededError,
+  assertMeetingUploadDurationLimit,
+} from "@/lib/server/upload-duration-limit";
 
 export const runtime = "nodejs";
 
@@ -84,6 +88,10 @@ export async function POST(
           | "whisper-1")
       : "gpt-4o-mini-transcribe";
     const quotaContext = await readMeetingQuotaContext(meetingId);
+    await assertMeetingUploadDurationLimit({
+      companyId: quotaContext.companyId,
+      audioDurationSec: quotaContext.audioDurationSec ?? body.audioDurationSec,
+    });
     await assertAiQuotaAvailable({
       companyId: quotaContext.companyId,
       feature: "transcription",
@@ -193,6 +201,16 @@ export async function POST(
           used: error.used,
         },
         { status: 429 },
+      );
+    }
+
+    if (error instanceof UploadDurationLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          limitMinutes: error.limitMinutes,
+        },
+        { status: 400 },
       );
     }
 

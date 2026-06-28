@@ -50,6 +50,50 @@ service cloud.firestore {
       return plan == "standard" || plan == "pro" || plan == "enterprise";
     }
 
+    function isValidUploadDurationLimitMinutes(limitMinutes) {
+      return limitMinutes == 60 || limitMinutes == 120 || limitMinutes == 180 || limitMinutes == 240;
+    }
+
+    function isValidMonthlyAiQuota(quota) {
+      return quota is number && quota >= 0;
+    }
+
+    function isValidOptionalMonthlyAiQuota(quota) {
+      return quota == null || isValidMonthlyAiQuota(quota);
+    }
+
+    function companyUploadDurationLimitMinutes(companyId) {
+      return exists(/databases/$(database)/documents/companies/$(companyId))
+        && isValidUploadDurationLimitMinutes(get(/databases/$(database)/documents/companies/$(companyId)).data.uploadDurationLimitMinutes)
+        ? get(/databases/$(database)/documents/companies/$(companyId)).data.uploadDurationLimitMinutes
+        : 60;
+    }
+
+    function effectiveUploadDurationLimitSec(companyId) {
+      return (companyUploadDurationLimitMinutes(companyId) + 3) * 60;
+    }
+
+    function hasValidUploadDuration(companyId) {
+      return !("audioFileName" in request.resource.data)
+        || request.resource.data.audioFileName == null
+        || (
+          request.resource.data.audioDurationSec is number
+          && request.resource.data.audioDurationSec >= 0
+          && request.resource.data.audioDurationSec <= effectiveUploadDurationLimitSec(companyId)
+        );
+    }
+
+    function isUploadDurationRelevantUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "audioFileName",
+        "audioFilePath",
+        "audioDownloadUrl",
+        "audioSizeBytes",
+        "audioMimeType",
+        "audioDurationSec"
+      ]);
+    }
+
     function sameCompany(companyId) {
       return isSignedIn() && companyId is string && companyId == currentCompanyId();
     }
@@ -101,10 +145,20 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.companyName is string
         && isValidCompanyPlan(request.resource.data.plan)
-        && isValidCompanyStatus(request.resource.data.status);
+        && isValidCompanyStatus(request.resource.data.status)
+        && isValidMonthlyAiQuota(request.resource.data.monthlyTranscriptionQuota)
+        && isValidMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota)
+        && (!("uploadDurationLimitMinutes" in request.resource.data)
+          || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes));
       allow update: if isOwnerRole()
         && (!("plan" in request.resource.data) || isValidCompanyPlan(request.resource.data.plan))
-        && (!("status" in request.resource.data) || isValidCompanyStatus(request.resource.data.status));
+        && (!("status" in request.resource.data) || isValidCompanyStatus(request.resource.data.status))
+        && (!("monthlyTranscriptionQuota" in request.resource.data)
+          || isValidOptionalMonthlyAiQuota(request.resource.data.monthlyTranscriptionQuota))
+        && (!("monthlyRoleplayQuota" in request.resource.data)
+          || isValidOptionalMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota))
+        && (!("uploadDurationLimitMinutes" in request.resource.data)
+          || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes));
       allow delete: if false;
     }
 
@@ -161,9 +215,13 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && canUseMeetingDomain()
         && request.resource.data.userId == request.auth.uid
-        && sameCompany(request.resource.data.companyId);
-      allow update: if canAdminCompanyData(resource.data.companyId)
-        || (canUseMeetingDomain() && isSelf(resource.data.userId) && sameCompany(resource.data.companyId));
+        && sameCompany(request.resource.data.companyId)
+        && hasValidUploadDuration(request.resource.data.companyId);
+      allow update: if (
+          canAdminCompanyData(resource.data.companyId)
+          || (canUseMeetingDomain() && isSelf(resource.data.userId) && sameCompany(resource.data.companyId))
+        )
+        && (!isUploadDurationRelevantUpdate() || hasValidUploadDuration(resource.data.companyId));
       allow delete: if false;
 
       match /{subcollection}/{documentId} {
@@ -247,10 +305,7 @@ service cloud.firestore {
       allow read: if canUseTeleapoDomain()
         && canReadCompanyData(resource.data.companyId)
         && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn()
-        && canUseTeleapoDomain()
-        && request.resource.data.userId == request.auth.uid
-        && sameCompany(request.resource.data.companyId);
+      allow create: if false;
       allow update, delete: if false;
     }
 

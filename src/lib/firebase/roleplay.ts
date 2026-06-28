@@ -14,7 +14,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 
-import { assertFirebaseClient } from "@/lib/firebase/client";
+import { assertFirebaseClient, firebaseAuth } from "@/lib/firebase/client";
 
 export type RoleplayDifficulty = "easy" | "normal" | "hard";
 
@@ -143,21 +143,37 @@ export async function createRoleplayScenario(input: CreateRoleplayScenarioInput)
 }
 
 export async function saveRoleplayResult(input: Omit<RoleplayResult, "id" | "createdAt" | "companyId"> & { companyId?: string | null }) {
-  const { firestore } = assertFirebaseClient();
+  const token = await firebaseAuth?.currentUser?.getIdToken();
 
-  await addDoc(collection(firestore, "roleplayResults"), {
-    companyId: input.companyId ?? null,
-    scenarioId: input.scenarioId,
-    scenarioTitle: input.scenarioTitle,
-    productName: input.productName,
-    userId: input.userId,
-    score: input.score,
-    summary: input.summary,
-    strengths: input.strengths,
-    improvements: input.improvements,
-    messages: input.messages,
-    createdAt: serverTimestamp(),
+  if (!token) {
+    throw new Error("ログイン情報を確認できませんでした。");
+  }
+
+  const response = await fetch("/api/roleplay/results", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      companyId: input.companyId ?? null,
+      scenarioId: input.scenarioId,
+      scenarioTitle: input.scenarioTitle,
+      productName: input.productName,
+      userId: input.userId,
+      score: input.score,
+      summary: input.summary,
+      strengths: input.strengths,
+      improvements: input.improvements,
+      messages: input.messages,
+    }),
   });
+
+  const data = (await response.json()) as { id?: string; error?: string };
+
+  if (!response.ok) {
+    throw new Error(data.error ?? "ロープレ結果の保存に失敗しました。");
+  }
 }
 
 function mapRoleplayScenario(snapshot: QueryDocumentSnapshot<DocumentData>): RoleplayScenario {

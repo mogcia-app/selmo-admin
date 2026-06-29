@@ -50,8 +50,8 @@ service cloud.firestore {
       return plan == "standard" || plan == "pro" || plan == "enterprise";
     }
 
-    function isValidUploadDurationLimitMinutes(limitMinutes) {
-      return limitMinutes == 60 || limitMinutes == 120 || limitMinutes == 180 || limitMinutes == 240;
+    function isValidUploadDurationLimitMinutes(value) {
+      return value == 60 || value == 120 || value == 180 || value == 240;
     }
 
     function isValidMonthlyAiQuota(quota) {
@@ -62,55 +62,8 @@ service cloud.firestore {
       return quota == null || isValidMonthlyAiQuota(quota);
     }
 
-    function companyUploadDurationLimitMinutes(companyId) {
-      return exists(/databases/$(database)/documents/companies/$(companyId))
-        && isValidUploadDurationLimitMinutes(get(/databases/$(database)/documents/companies/$(companyId)).data.uploadDurationLimitMinutes)
-        ? get(/databases/$(database)/documents/companies/$(companyId)).data.uploadDurationLimitMinutes
-        : 60;
-    }
-
-    function effectiveUploadDurationLimitSec(companyId) {
-      return (companyUploadDurationLimitMinutes(companyId) + 3) * 60;
-    }
-
-    function hasValidUploadDuration(companyId) {
-      return !("audioFileName" in request.resource.data)
-        || request.resource.data.audioFileName == null
-        || (
-          request.resource.data.audioDurationSec is number
-          && request.resource.data.audioDurationSec >= 0
-          && request.resource.data.audioDurationSec <= effectiveUploadDurationLimitSec(companyId)
-        );
-    }
-
-    function isUploadDurationRelevantUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        "audioFileName",
-        "audioFilePath",
-        "audioDownloadUrl",
-        "audioSizeBytes",
-        "audioMimeType",
-        "audioDurationSec"
-      ]);
-    }
-
     function sameCompany(companyId) {
       return isSignedIn() && companyId is string && companyId == currentCompanyId();
-    }
-
-    function hasSalesDomain(domain) {
-      return isSignedIn()
-        && (!("enabledSalesDomains" in currentUser())
-          || !(domain in currentUser().enabledSalesDomains)
-          || currentUser().enabledSalesDomains[domain] == true);
-    }
-
-    function canUseMeetingDomain() {
-      return isOwnerRole() || isAdminRole() || (isSalesRole() && hasSalesDomain("meeting"));
-    }
-
-    function canUseTeleapoDomain() {
-      return isOwnerRole() || isAdminRole() || (isSalesRole() && hasSalesDomain("teleapo"));
     }
 
     function canReadCompanyData(companyId) {
@@ -119,6 +72,64 @@ service cloud.firestore {
 
     function canAdminCompanyData(companyId) {
       return isOwnerRole() || (isAdminRole() && sameCompany(companyId));
+    }
+
+    function canUseMeetingDomain() {
+      return isOwnerRole()
+        || isAdminRole()
+        || !("enabledSalesDomains" in currentUser())
+        || !("meeting" in currentUser().enabledSalesDomains)
+        || currentUser().enabledSalesDomains.meeting == true;
+    }
+
+    function canUseTeleapoDomain() {
+      return isOwnerRole()
+        || isAdminRole()
+        || !("enabledSalesDomains" in currentUser())
+        || !("teleapo" in currentUser().enabledSalesDomains)
+        || currentUser().enabledSalesDomains.teleapo == true;
+    }
+
+    function canUseRoleplayDomain() {
+      return canUseMeetingDomain() || canUseTeleapoDomain();
+    }
+
+    function canUseKnowledgeDomain() {
+      return canUseMeetingDomain() || canUseTeleapoDomain();
+    }
+
+    function canUseMeetingDocument(data) {
+      return (
+          ("salesDomain" in data)
+          && data.salesDomain == "teleapo"
+          && canUseTeleapoDomain()
+        )
+        || (
+          (!("salesDomain" in data) || data.salesDomain != "teleapo")
+          && canUseMeetingDomain()
+        );
+    }
+
+    function companyData(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)).data;
+    }
+
+    function canUseUploadDurationLimit(data) {
+      return (
+          (!("audioDurationSec" in data) || data.audioDurationSec == null)
+          && (!("audioFileName" in data) || data.audioFileName == null)
+          && (!("audioSizeBytes" in data) || data.audioSizeBytes == null)
+        )
+        || (
+          data.audioDurationSec is number
+          && (
+            (!("uploadDurationLimitMinutes" in companyData(data.companyId)) && data.audioDurationSec <= 63 * 60)
+            || (companyData(data.companyId).uploadDurationLimitMinutes == 60 && data.audioDurationSec <= 63 * 60)
+            || (companyData(data.companyId).uploadDurationLimitMinutes == 120 && data.audioDurationSec <= 123 * 60)
+            || (companyData(data.companyId).uploadDurationLimitMinutes == 180 && data.audioDurationSec <= 183 * 60)
+            || (companyData(data.companyId).uploadDurationLimitMinutes == 240 && data.audioDurationSec <= 243 * 60)
+          )
+        );
     }
 
     function isKnowledgeCategoryCounterUpdate() {
@@ -140,30 +151,70 @@ service cloud.firestore {
         && request.resource.data.tabs is list;
     }
 
+    function isAdminUserCoachingUpdate() {
+      return isAdminRole()
+        && sameCompany(resource.data.companyId)
+        && resource.data.role != "owner"
+        && request.resource.data.companyId == resource.data.companyId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "nextCoachingMemo",
+          "nextCoachingMemoUpdatedAt",
+          "nextCoachingMemoUpdatedBy",
+          "adminCoachingStatus",
+          "adminCoachingPriority",
+          "adminCoachingReason",
+          "adminNextActionTitle",
+          "adminNextActionNote",
+          "adminNextActionDueDate",
+          "adminNextActionUpdatedAt",
+          "adminNextActionUpdatedBy",
+          "adminReviewStatus",
+          "adminLastReviewedAt",
+          "adminNextReviewDate",
+          "adminReviewMemo",
+          "adminReviewUpdatedAt",
+          "adminReviewUpdatedBy",
+          "updatedAt"
+        ]);
+    }
+
     match /companies/{companyId} {
       allow read: if isOwnerRole() || sameCompany(companyId);
       allow create: if isSignedIn()
         && request.resource.data.companyName is string
         && isValidCompanyPlan(request.resource.data.plan)
         && isValidCompanyStatus(request.resource.data.status)
-        && isValidMonthlyAiQuota(request.resource.data.monthlyTranscriptionQuota)
-        && isValidMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota)
-        && (!("uploadDurationLimitMinutes" in request.resource.data)
-          || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes));
-      allow update: if isOwnerRole()
-        && (!("plan" in request.resource.data) || isValidCompanyPlan(request.resource.data.plan))
-        && (!("status" in request.resource.data) || isValidCompanyStatus(request.resource.data.status))
         && (!("monthlyTranscriptionQuota" in request.resource.data)
-          || isValidOptionalMonthlyAiQuota(request.resource.data.monthlyTranscriptionQuota))
+          || isValidMonthlyAiQuota(request.resource.data.monthlyTranscriptionQuota))
         && (!("monthlyRoleplayQuota" in request.resource.data)
-          || isValidOptionalMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota))
-        && (!("uploadDurationLimitMinutes" in request.resource.data)
-          || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes));
+          || isValidMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota))
+        && (!("uploadDurationLimitMinutes" in request.resource.data) || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes));
+      allow update: if (
+          isOwnerRole()
+          && (!("plan" in request.resource.data) || isValidCompanyPlan(request.resource.data.plan))
+          && (!("status" in request.resource.data) || isValidCompanyStatus(request.resource.data.status))
+          && (!("monthlyTranscriptionQuota" in request.resource.data)
+            || isValidOptionalMonthlyAiQuota(request.resource.data.monthlyTranscriptionQuota))
+          && (!("monthlyRoleplayQuota" in request.resource.data)
+            || isValidOptionalMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota))
+          && (!("uploadDurationLimitMinutes" in request.resource.data) || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes))
+        )
+        || (
+          isAdminRole()
+          && sameCompany(companyId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["notificationEmails", "uploadDurationLimitMinutes", "updatedAt"])
+          && (!("notificationEmails" in request.resource.data) || (request.resource.data.notificationEmails is list && request.resource.data.notificationEmails.size() <= 3))
+          && (!("uploadDurationLimitMinutes" in request.resource.data) || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes))
+        );
       allow delete: if false;
     }
 
     match /users/{userId} {
-      allow read: if isOwnerRole() || isSelf(userId) || (isAdminRole() && sameCompany(resource.data.companyId));
+      allow read: if isOwnerRole()
+        || isSelf(userId)
+        || ((isAdminRole() || isSalesRole()) && sameCompany(resource.data.companyId));
       allow create: if (
           isSelf(userId)
           && request.resource.data.uid == request.auth.uid
@@ -187,6 +238,7 @@ service cloud.firestore {
           && isValidUserStatus(request.resource.data.status)
         );
       allow update: if isOwnerRole()
+        || isAdminUserCoachingUpdate()
         || (
           isAdminRole()
           && sameCompany(resource.data.companyId)
@@ -200,39 +252,106 @@ service cloud.firestore {
           && request.resource.data.status == resource.data.status
           && request.resource.data.email == resource.data.email
         );
-      allow delete: if false;
+      allow delete: if canAdminCompanyData(resource.data.companyId)
+        || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));
 
       match /knowledgeSearchHistory/{historyId} {
         allow read: if isOwnerRole() || isSelf(userId);
-        allow write: if isSelf(userId);
+        allow write: if isSelf(userId) && canUseKnowledgeDomain();
       }
     }
 
     match /meetings/{meetingId} {
-      allow read: if canUseMeetingDomain()
-        && canReadCompanyData(resource.data.companyId)
-        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+      allow read: if isOwnerRole()
+        || (
+          canReadCompanyData(resource.data.companyId)
+          && canUseMeetingDocument(resource.data)
+          && (isAdminRole() || resource.data.userId == request.auth.uid)
+        )
+        || (
+          isSignedIn()
+          && !("companyId" in resource.data)
+          && resource.data.userId == request.auth.uid
+        );
       allow create: if isSignedIn()
-        && canUseMeetingDomain()
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
-        && hasValidUploadDuration(request.resource.data.companyId);
-      allow update: if (
-          canAdminCompanyData(resource.data.companyId)
-          || (canUseMeetingDomain() && isSelf(resource.data.userId) && sameCompany(resource.data.companyId))
-        )
-        && (!isUploadDurationRelevantUpdate() || hasValidUploadDuration(resource.data.companyId));
-      allow delete: if false;
+        && canUseMeetingDocument(request.resource.data)
+        && canUseUploadDurationLimit(request.resource.data);
+      allow update: if canAdminCompanyData(resource.data.companyId) || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));
+      allow delete: if canAdminCompanyData(resource.data.companyId)
+        || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));
 
       match /{subcollection}/{documentId} {
-        allow read: if canUseMeetingDomain()
-          && canReadCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
+        allow read: if canReadCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
         allow write: if canAdminCompanyData(get(/databases/$(database)/documents/meetings/$(meetingId)).data.companyId);
       }
     }
 
+    match /customers/{customerId} {
+      allow read: if isOwnerRole()
+        || (
+          canReadCompanyData(resource.data.companyId)
+          && (isAdminRole() || resource.data.assignedUserId == request.auth.uid)
+        );
+      allow create: if isSignedIn()
+        && sameCompany(request.resource.data.companyId)
+        && (
+          isAdminRole()
+          || (
+            isSalesRole()
+            && request.resource.data.assignedUserId == request.auth.uid
+          )
+        );
+      allow update: if canAdminCompanyData(resource.data.companyId)
+        || (
+          isSalesRole()
+          && resource.data.assignedUserId == request.auth.uid
+          && sameCompany(resource.data.companyId)
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.assignedUserId == resource.data.assignedUserId
+        );
+      allow delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
+    match /customerLogs/{logId} {
+      allow read: if isOwnerRole()
+        || (
+          canReadCompanyData(resource.data.companyId)
+          && (isAdminRole() || resource.data.userId == request.auth.uid || resource.data.createdBy == request.auth.uid)
+        );
+      allow create: if isSignedIn()
+        && sameCompany(request.resource.data.companyId)
+        && (
+          isAdminRole()
+          || request.resource.data.userId == request.auth.uid
+          || request.resource.data.createdBy == request.auth.uid
+        );
+      allow update, delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
+    match /customerMeetings/{linkId} {
+      allow read: if canReadCompanyData(resource.data.companyId);
+      allow create: if isSignedIn()
+        && sameCompany(request.resource.data.companyId);
+      allow update, delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
     match /meetingOutcomeHistory/{historyId} {
       allow read, write: if isOwnerRole() || isAdminRole();
+    }
+
+    match /calendarEvents/{eventId} {
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && (canUseMeetingDocument(resource.data) || canUseRoleplayDomain());
+      allow create: if isSignedIn()
+        && sameCompany(request.resource.data.companyId)
+        && request.resource.data.userId == request.auth.uid
+        && canUseMeetingDocument(request.resource.data);
+      allow update: if canAdminCompanyData(resource.data.companyId)
+        || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));
+      allow delete: if canAdminCompanyData(resource.data.companyId)
+        || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));
     }
 
     match /monthlyStats/{month} {
@@ -246,67 +365,143 @@ service cloud.firestore {
     }
 
     match /manualChecklists/{checklistId} {
-      allow read: if isSignedIn();
+      allow read: if isOwnerRole() || isAdminRole();
       allow write: if isOwnerRole() || isAdminRole();
     }
 
+    match /salesManuals/{manualId} {
+      allow read: if canReadCompanyData(resource.data.companyId) && canUseMeetingDomain();
+      allow create: if canAdminCompanyData(request.resource.data.companyId)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
     match /knowledgeCategories/{categoryId} {
-      allow read: if canUseMeetingDomain() && canReadCompanyData(resource.data.companyId);
+      allow read: if canReadCompanyData(resource.data.companyId) && canUseKnowledgeDomain();
       allow create: if isSignedIn()
-        && canUseMeetingDomain()
         && request.resource.data.createdBy == request.auth.uid
-        && sameCompany(request.resource.data.companyId);
+        && sameCompany(request.resource.data.companyId)
+        && canUseKnowledgeDomain();
       allow update: if canAdminCompanyData(resource.data.companyId)
-        || (resource.data.createdBy == request.auth.uid && sameCompany(resource.data.companyId))
+        || (resource.data.createdBy == request.auth.uid && sameCompany(resource.data.companyId) && canUseKnowledgeDomain())
         || isKnowledgeCategoryCounterUpdate();
       allow delete: if canAdminCompanyData(resource.data.companyId);
     }
 
     match /knowledgeProducts/{productId} {
-      allow read: if canUseMeetingDomain() && canReadCompanyData(resource.data.companyId);
+      allow read: if canReadCompanyData(resource.data.companyId);
       allow create: if isSignedIn()
-        && canUseMeetingDomain()
         && request.resource.data.createdBy == request.auth.uid
-        && sameCompany(request.resource.data.companyId);
+        && sameCompany(request.resource.data.companyId)
+        && canUseKnowledgeDomain();
       allow update: if canAdminCompanyData(resource.data.companyId)
-        || (resource.data.createdBy == request.auth.uid && sameCompany(resource.data.companyId))
+        || (resource.data.createdBy == request.auth.uid && sameCompany(resource.data.companyId) && canUseKnowledgeDomain())
         || isKnowledgeProductCounterUpdate()
         || isKnowledgeProductTabsUpdate();
       allow delete: if canAdminCompanyData(resource.data.companyId);
     }
 
     match /knowledgeItems/{knowledgeId} {
-      allow read: if canUseMeetingDomain()
-        && canReadCompanyData(resource.data.companyId)
-        && (resource.data.scope == "shared" || resource.data.ownerId == request.auth.uid || isAdminRole() || isOwnerRole());
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && canUseKnowledgeDomain()
+        && (
+          resource.data.scope == "shared"
+          || resource.data.ownerId == request.auth.uid
+          || (("sharedWithUserIds" in resource.data) && request.auth.uid in resource.data.sharedWithUserIds)
+          || isAdminRole()
+          || isOwnerRole()
+        );
       allow create: if isSignedIn()
-        && canUseMeetingDomain()
         && request.resource.data.ownerId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
-        && (request.resource.data.scope == "personal" || isAdminRole() || isOwnerRole());
+        && canUseKnowledgeDomain()
+        && (request.resource.data.scope == "personal" || request.resource.data.scope == "shared");
       allow update: if canAdminCompanyData(resource.data.companyId)
         || (
           resource.data.ownerId == request.auth.uid
+          && canUseKnowledgeDomain()
           && request.resource.data.ownerId == resource.data.ownerId
           && request.resource.data.companyId == resource.data.companyId
-          && request.resource.data.scope == "personal"
+          && (request.resource.data.scope == "personal" || request.resource.data.scope == "shared")
         );
-      allow delete: if canAdminCompanyData(resource.data.companyId) || resource.data.ownerId == request.auth.uid;
+      allow delete: if canAdminCompanyData(resource.data.companyId) || (resource.data.ownerId == request.auth.uid && canUseKnowledgeDomain());
     }
 
     match /roleplayScenarios/{scenarioId} {
-      allow read: if canUseTeleapoDomain() && canReadCompanyData(resource.data.companyId);
+      allow read: if canReadCompanyData(resource.data.companyId) && canUseRoleplayDomain();
+      allow create: if canAdminCompanyData(request.resource.data.companyId)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && sameCompany(request.resource.data.companyId)
+        && canUseRoleplayDomain();
+      allow update: if canAdminCompanyData(resource.data.companyId)
+        || (
+          resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.companyId == resource.data.companyId
+          && sameCompany(resource.data.companyId)
+          && canUseRoleplayDomain()
+        );
+      allow delete: if canAdminCompanyData(resource.data.companyId);
+    }
+
+    match /roleplayTalkGuides/{guideId} {
+      allow read: if canReadCompanyData(resource.data.companyId) && canUseRoleplayDomain();
       allow create: if canAdminCompanyData(request.resource.data.companyId)
         && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if canAdminCompanyData(resource.data.companyId);
     }
 
     match /roleplayResults/{resultId} {
-      allow read: if canUseTeleapoDomain()
-        && canReadCompanyData(resource.data.companyId)
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && canUseRoleplayDomain()
         && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
-      allow create: if false;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && sameCompany(request.resource.data.companyId)
+        && canUseRoleplayDomain();
+      allow update: if false;
+      allow delete: if canAdminCompanyData(resource.data.companyId)
+        || (
+          isSignedIn()
+          && resource.data.userId == request.auth.uid
+          && sameCompany(resource.data.companyId)
+          && canUseRoleplayDomain()
+        );
+    }
+
+    match /roleplaySessions/{sessionId} {
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && canUseRoleplayDomain()
+        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    match /roleplayResultComments/{commentId} {
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && canUseRoleplayDomain()
+        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+      allow create: if canAdminCompanyData(request.resource.data.companyId)
+        && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if false;
+    }
+
+    match /roleplayAssignments/{assignmentId} {
+      allow read: if canReadCompanyData(resource.data.companyId)
+        && canUseRoleplayDomain()
+        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+      allow create: if canAdminCompanyData(request.resource.data.companyId)
+        && request.resource.data.assignedBy == request.auth.uid;
+      allow update: if isSignedIn()
+        && sameCompany(resource.data.companyId)
+        && canUseRoleplayDomain()
+        && (
+          canAdminCompanyData(resource.data.companyId)
+          || resource.data.userId == request.auth.uid
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "completedAt"]);
+      allow delete: if false;
     }
 
     match /systemErrors/{errorId} {
@@ -367,7 +562,40 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /emailEvents/{eventId} {
+      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
+      allow create, update: if isOwnerRole();
+      allow delete: if false;
+    }
+
+    match /appNotifications/{notificationId} {
+      allow read: if isOwnerRole() || (isSignedIn() && sameCompany(resource.data.companyId) && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn()
+        && sameCompany(request.resource.data.companyId)
+        && (
+          request.resource.data.userId == request.auth.uid
+          || isAdminRole()
+          || isOwnerRole()
+        );
+      allow update: if isSignedIn()
+        && sameCompany(resource.data.companyId)
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["read", "readAt", "updatedAt"]);
+      allow delete: if false;
+    }
+
     match /knowledgeSearchEvents/{eventId} {
+      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
+      allow create: if isOwnerRole() || (
+        isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && sameCompany(request.resource.data.companyId)
+        && canUseKnowledgeDomain()
+      );
+      allow update, delete: if false;
+    }
+
+    match /salesActivityEvents/{eventId} {
       allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
       allow create: if isOwnerRole() || (
         isSignedIn()
@@ -379,7 +607,18 @@ service cloud.firestore {
 
     match /audioProcessingJobs/{jobId} {
       allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
-      allow create, update: if isOwnerRole() || (isSignedIn() && sameCompany(request.resource.data.companyId));
+      allow create: if isOwnerRole() || (
+        isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && sameCompany(request.resource.data.companyId)
+      );
+      allow update: if isOwnerRole()
+        || canAdminCompanyData(resource.data.companyId)
+        || (
+          isSignedIn()
+          && resource.data.userId == request.auth.uid
+          && sameCompany(resource.data.companyId)
+        );
       allow delete: if false;
     }
 

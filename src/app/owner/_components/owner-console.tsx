@@ -3,7 +3,7 @@
 import { FirebaseError } from "firebase/app";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { subscribeToUserProfiles, type AppUserProfile } from "@/lib/firebase/auth";
 import {
@@ -793,20 +793,61 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
   const [monthlyRoleplayQuota, setMonthlyRoleplayQuota] = useState(row.company.monthlyRoleplayQuota?.toString() ?? "");
   const [monthlyFee, setMonthlyFee] = useState(row.company.monthlyFee?.toString() ?? "");
   const [contractStartDate, setContractStartDate] = useState(formatDateInput(row.company.contractStartDate));
+  const [isEditingLimits, setIsEditingLimits] = useState(false);
+  const [isUpdatingLimits, setIsUpdatingLimits] = useState(false);
+  const [limitError, setLimitError] = useState<string | null>(null);
+
+  const resetLimitDraft = useCallback(() => {
+    setUploadDurationLimitMinutes(row.company.uploadDurationLimitMinutes);
+    setMonthlyTranscriptionQuota(row.company.monthlyTranscriptionQuota?.toString() ?? "");
+    setMonthlyRoleplayQuota(row.company.monthlyRoleplayQuota?.toString() ?? "");
+    setLimitError(null);
+  }, [row.company.monthlyRoleplayQuota, row.company.monthlyTranscriptionQuota, row.company.uploadDurationLimitMinutes]);
 
   useEffect(() => {
     setPlan(row.company.plan);
     setStatus(row.company.status);
-    setUploadDurationLimitMinutes(row.company.uploadDurationLimitMinutes);
-    setMonthlyTranscriptionQuota(row.company.monthlyTranscriptionQuota?.toString() ?? "");
-    setMonthlyRoleplayQuota(row.company.monthlyRoleplayQuota?.toString() ?? "");
     setMonthlyFee(row.company.monthlyFee?.toString() ?? "");
     setContractStartDate(formatDateInput(row.company.contractStartDate));
-  }, [row.company.contractStartDate, row.company.monthlyFee, row.company.monthlyRoleplayQuota, row.company.monthlyTranscriptionQuota, row.company.plan, row.company.status, row.company.uploadDurationLimitMinutes]);
+    if (!isEditingLimits) {
+      resetLimitDraft();
+    }
+  }, [isEditingLimits, resetLimitDraft, row.company.contractStartDate, row.company.monthlyFee, row.company.plan, row.company.status]);
 
   async function persist(input: Parameters<typeof updateCompany>[1]) {
     await updateCompany(row.company.id, input);
   }
+
+  async function updateLimits() {
+    setLimitError(null);
+    setIsUpdatingLimits(true);
+
+    try {
+      const nextTranscriptionQuota = parseQuota(monthlyTranscriptionQuota);
+      const nextRoleplayQuota = parseQuota(monthlyRoleplayQuota);
+      await persist({
+        monthlyTranscriptionQuota: nextTranscriptionQuota,
+        monthlyRoleplayQuota: nextRoleplayQuota,
+        uploadDurationLimitMinutes,
+      });
+      setIsEditingLimits(false);
+    } catch (error) {
+      setLimitError(error instanceof Error ? error.message : "利用制限の更新に失敗しました。");
+    } finally {
+      setIsUpdatingLimits(false);
+    }
+  }
+
+  const parsedMonthlyTranscriptionQuota = parseQuota(monthlyTranscriptionQuota);
+  const parsedMonthlyRoleplayQuota = parseQuota(monthlyRoleplayQuota);
+  const hasLimitChanges =
+    parsedMonthlyTranscriptionQuota !== row.company.monthlyTranscriptionQuota ||
+    parsedMonthlyRoleplayQuota !== row.company.monthlyRoleplayQuota ||
+    uploadDurationLimitMinutes !== row.company.uploadDurationLimitMinutes;
+  const draftTotalMonthlyAiQuota = getTotalMonthlyAiQuota({
+    monthlyTranscriptionQuota: parsedMonthlyTranscriptionQuota,
+    monthlyRoleplayQuota: parsedMonthlyRoleplayQuota,
+  });
 
   return (
     <tr className="border-b border-[#eef1f5] text-[13px]">
@@ -828,39 +869,53 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
         />
       </td>
       <td className="px-3 py-4 text-[#343b48]">
-        <div className="flex min-w-[220px] gap-2">
-          <input
-            value={monthlyTranscriptionQuota}
-            onChange={(event) => setMonthlyTranscriptionQuota(event.target.value)}
-            onBlur={() => void persist({ monthlyTranscriptionQuota: parseQuota(monthlyTranscriptionQuota) })}
-            inputMode="numeric"
-            placeholder="文字起こし"
-            className="w-[104px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400]"
-            aria-label={`${row.company.companyName} 文字起こし月間上限`}
-          />
-          <input
-            value={monthlyRoleplayQuota}
-            onChange={(event) => setMonthlyRoleplayQuota(event.target.value)}
-            onBlur={() => void persist({ monthlyRoleplayQuota: parseQuota(monthlyRoleplayQuota) })}
-            inputMode="numeric"
-            placeholder="ロープレ"
-            className="w-[104px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400]"
-            aria-label={`${row.company.companyName} ロープレ月間上限`}
+        <div className="grid min-w-[240px] gap-2">
+          <div className="flex gap-2">
+            <input
+              value={monthlyTranscriptionQuota}
+              onChange={(event) => setMonthlyTranscriptionQuota(event.target.value)}
+              disabled={!isEditingLimits || isUpdatingLimits}
+              inputMode="numeric"
+              placeholder="文字起こし"
+              className="w-[104px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400] disabled:bg-[#f8f6ef] disabled:text-[#8a909b]"
+              aria-label={`${row.company.companyName} 文字起こし月間上限`}
+            />
+            <input
+              value={monthlyRoleplayQuota}
+              onChange={(event) => setMonthlyRoleplayQuota(event.target.value)}
+              disabled={!isEditingLimits || isUpdatingLimits}
+              inputMode="numeric"
+              placeholder="ロープレ"
+              className="w-[104px] rounded-[8px] border border-[#eadfbc] bg-[#fffefa] px-3 py-2 text-[13px] font-bold outline-none focus:border-[#ffc400] disabled:bg-[#f8f6ef] disabled:text-[#8a909b]"
+              aria-label={`${row.company.companyName} ロープレ月間上限`}
+            />
+          </div>
+          <LimitEditActions
+            isEditing={isEditingLimits}
+            isSaving={isUpdatingLimits}
+            canUpdate={hasLimitChanges}
+            onEdit={() => {
+              resetLimitDraft();
+              setIsEditingLimits(true);
+            }}
+            onCancel={() => {
+              resetLimitDraft();
+              setIsEditingLimits(false);
+            }}
+            onUpdate={() => void updateLimits()}
           />
         </div>
         <div className="mt-1 text-[11px] text-[#8a909b]">
-          文字起こし / ロープレ ・ 合計 {formatQuota(getTotalMonthlyAiQuota(row.company))}
+          文字起こし / ロープレ ・ 合計 {formatQuota(isEditingLimits ? draftTotalMonthlyAiQuota : getTotalMonthlyAiQuota(row.company))}
         </div>
+        {limitError ? <div className="mt-1 text-[11px] font-bold text-red-700">{limitError}</div> : null}
       </td>
       <td className="px-3 py-4">
         <InlineSelect
           value={String(uploadDurationLimitMinutes)}
-          onChange={(value) => {
-            const nextLimit = Number(value) as UploadDurationLimitMinutes;
-            setUploadDurationLimitMinutes(nextLimit);
-            void persist({ uploadDurationLimitMinutes: nextLimit });
-          }}
+          onChange={(value) => setUploadDurationLimitMinutes(Number(value) as UploadDurationLimitMinutes)}
           options={uploadDurationLimitSelectOptions}
+          disabled={!isEditingLimits || isUpdatingLimits}
         />
       </td>
       <td className="px-3 py-4 text-[#343b48]">
@@ -1690,7 +1745,9 @@ function TenantUserDialog({
   const [role, setRole] = useState<"admin" | "sales">(initialRole);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(() => generateInitialPassword());
+  const [showPassword, setShowPassword] = useState(true);
+  const [passwordCopyStatus, setPasswordCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [enabledMeeting, setEnabledMeeting] = useState(true);
   const [enabledTeleapo, setEnabledTeleapo] = useState(true);
   const [workExperienceYears, setWorkExperienceYears] = useState("");
@@ -1703,6 +1760,18 @@ function TenantUserDialog({
       setCompanyId(fixedCompanyId);
     }
   }, [fixedCompanyId]);
+
+  async function copyPassword() {
+    setPasswordCopyStatus("idle");
+
+    try {
+      await navigator.clipboard.writeText(password);
+      setPasswordCopyStatus("copied");
+      window.setTimeout(() => setPasswordCopyStatus("idle"), 1800);
+    } catch {
+      setPasswordCopyStatus("failed");
+    }
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1767,7 +1836,22 @@ function TenantUserDialog({
           />
           <Field label="名前" value={name} onChange={setName} placeholder="山田 太郎" />
           <Field label="メールアドレス" value={email} onChange={setEmail} placeholder="taro@example.com" />
-          <Field label="初期パスワード" value={password} onChange={setPassword} placeholder="6文字以上" type="password" />
+          <PasswordField
+            value={password}
+            onChange={(value) => {
+              setPassword(value);
+              setPasswordCopyStatus("idle");
+            }}
+            visible={showPassword}
+            copyStatus={passwordCopyStatus}
+            onToggleVisible={() => setShowPassword((current) => !current)}
+            onCopy={() => void copyPassword()}
+            onRegenerate={() => {
+              setPassword(generateInitialPassword());
+              setPasswordCopyStatus("idle");
+              setShowPassword(true);
+            }}
+          />
           {role === "sales" ? (
             <>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1925,6 +2009,70 @@ function Field({ label, value, onChange, placeholder, type = "text", disabled = 
   );
 }
 
+function PasswordField({
+  value,
+  onChange,
+  visible,
+  copyStatus,
+  onToggleVisible,
+  onCopy,
+  onRegenerate,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  copyStatus: "idle" | "copied" | "failed";
+  onToggleVisible: () => void;
+  onCopy: () => void;
+  onRegenerate: () => void;
+}) {
+  return (
+    <div className="block">
+      <span className="mb-2 block text-[12px] font-bold text-[#343b48]">初期パスワード</span>
+      <div className="flex flex-wrap items-stretch gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <input
+            type={visible ? "text" : "password"}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="6文字以上"
+            className="w-full rounded-[8px] border border-[#eadfbc] bg-[#fffefa] py-3 pl-4 pr-12 font-mono text-[14px] outline-none transition placeholder:text-[#b0a894] focus:border-[#ffc400] focus:bg-white focus:shadow-[0_0_0_3px_rgba(255,196,0,0.16)]"
+          />
+          <button
+            type="button"
+            onClick={onToggleVisible}
+            aria-label={visible ? "パスワードを隠す" : "パスワードを表示"}
+            className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-[8px] text-[#7a808c] transition hover:bg-[#fff2c8] hover:text-[#8a6500]"
+          >
+            {visible ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex items-center justify-center gap-1 rounded-[8px] border border-[#eadfbc] bg-white px-3 py-2 text-[12px] font-bold text-[#343b48] transition hover:bg-[#fff8e4]"
+        >
+          <CopyIcon />
+          コピー
+        </button>
+        <button
+          type="button"
+          onClick={onRegenerate}
+          className="inline-flex items-center justify-center gap-1 rounded-[8px] bg-[#fff2c8] px-3 py-2 text-[12px] font-bold text-[#8a6500] transition hover:bg-[#ffe7a0]"
+        >
+          <RefreshSmallIcon />
+          再生成
+        </button>
+      </div>
+      {copyStatus === "copied" ? (
+        <span className="mt-1 block text-[11px] font-bold text-emerald-700">コピーしました</span>
+      ) : copyStatus === "failed" ? (
+        <span className="mt-1 block text-[11px] font-bold text-red-700">コピーできませんでした</span>
+      ) : null}
+    </div>
+  );
+}
+
 function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="block">
@@ -1975,6 +2123,55 @@ function InlineSelect({ value, onChange, options, full = false, disabled = false
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}
     </select>
+  );
+}
+
+function LimitEditActions({
+  isEditing,
+  isSaving,
+  canUpdate,
+  onEdit,
+  onCancel,
+  onUpdate,
+}: {
+  isEditing: boolean;
+  isSaving: boolean;
+  canUpdate: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onUpdate: () => void;
+}) {
+  if (!isEditing) {
+    return (
+      <button
+        type="button"
+        onClick={onEdit}
+        className="w-fit rounded-[8px] bg-[#fff2c8] px-3 py-1.5 text-[12px] font-bold text-[#8a6500] transition hover:bg-[#ffe7a0]"
+      >
+        編集する
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={onUpdate}
+        disabled={isSaving || !canUpdate}
+        className="rounded-[8px] bg-[#20242c] px-3 py-1.5 text-[12px] font-bold text-white transition hover:bg-[#343b48] disabled:opacity-50"
+      >
+        {isSaving ? "更新中" : "更新する"}
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={isSaving}
+        className="rounded-[8px] border border-[#eadfbc] bg-white px-3 py-1.5 text-[12px] font-bold text-[#343b48] transition hover:bg-[#fff8e4] disabled:opacity-50"
+      >
+        キャンセル
+      </button>
+    </div>
   );
 }
 
@@ -2454,6 +2651,47 @@ function parseMonthlyFee(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function generateInitialPassword() {
+  const groups = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!@#$%"];
+  const allCharacters = groups.join("");
+  const characters = groups.map((group) => pickPasswordCharacter(group));
+
+  while (characters.length < 12) {
+    characters.push(pickPasswordCharacter(allCharacters));
+  }
+
+  return shufflePasswordCharacters(characters).join("");
+}
+
+function pickPasswordCharacter(characters: string) {
+  return characters[randomInteger(characters.length)];
+}
+
+function shufflePasswordCharacters(characters: string[]) {
+  const shuffled = [...characters];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const targetIndex = randomInteger(index + 1);
+    [shuffled[index], shuffled[targetIndex]] = [shuffled[targetIndex], shuffled[index]];
+  }
+
+  return shuffled;
+}
+
+function randomInteger(maxExclusive: number) {
+  if (maxExclusive <= 0) return 0;
+
+  const cryptoApi = globalThis.crypto;
+
+  if (cryptoApi?.getRandomValues) {
+    const array = new Uint32Array(1);
+    cryptoApi.getRandomValues(array);
+    return array[0] % maxExclusive;
+  }
+
+  return Math.floor(Math.random() * maxExclusive);
+}
+
 function parseQuota(value: string) {
   const normalized = value.replace(/,/g, "").trim();
   if (!normalized) return null;
@@ -2528,6 +2766,46 @@ function formatUploadDurationLimit(value: number) {
 function formatWorkExperience(years: number | null, months: number | null) {
   if (years === null || months === null) return "未設定";
   return `${years}年${months}ヶ月`;
+}
+
+function EyeIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3l18 18" />
+      <path d="M10.6 10.6A2 2 0 0 0 12 14a2 2 0 0 0 1.4-.6" />
+      <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18.2 18.2 0 0 1-2.1 3" />
+      <path d="M6.1 6.8C3.5 8.5 2 12 2 12s3.5 7 10 7a10 10 0 0 0 4-.8" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function RefreshSmallIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 0 1-15.4 6.4L3 16" />
+      <path d="M3 16v5h5" />
+      <path d="M3 12A9 9 0 0 1 18.4 5.6L21 8" />
+      <path d="M21 3v5h-5" />
+    </svg>
+  );
 }
 
 function formatChargePlan(plan: string) {

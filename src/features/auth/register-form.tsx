@@ -60,12 +60,7 @@ export function RegisterForm() {
         companyName,
       });
 
-      const nextPath =
-        nextProfile?.role === "owner"
-          ? "/owner/dashboard"
-          : nextProfile?.role === "admin"
-            ? "/admin/dashboard"
-            : "/sales/dashboard";
+      const nextPath = nextProfile?.role === "admin" ? "/admin/dashboard" : "/sales/dashboard";
       router.replace(nextPath);
     } catch (error) {
       if (error instanceof FirebaseError) {

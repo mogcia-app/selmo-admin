@@ -95,12 +95,12 @@ export function subscribeToRoleplayScenarios(
 }
 
 export function subscribeToRoleplayResults(
-  input: { userId: string; isAdmin?: boolean; isOwner?: boolean; companyId?: string | null },
+  input: { userId: string; isAdmin?: boolean; includeAllCompanies?: boolean; companyId?: string | null },
   callback: (results: RoleplayResult[]) => void,
   onError?: (error: FirestoreError) => void,
 ): Unsubscribe {
   const { firestore } = assertFirebaseClient();
-  const resultsQuery = input.isOwner
+  const resultsQuery = input.includeAllCompanies
     ? collection(firestore, "roleplayResults")
     : input.isAdmin && input.companyId
       ? query(collection(firestore, "roleplayResults"), where("companyId", "==", input.companyId))

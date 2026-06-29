@@ -685,9 +685,9 @@ function useOwnerData(): OwnerData {
     const unsubscribers = [
       subscribeToCompanies(setCompanies, handleError),
       subscribeToUserProfiles(setUsers, handleError),
-      subscribeToMeetings({ role: "owner", userId: "owner" }, setMeetings, handleError),
+      subscribeToMeetings({ role: "admin", userId: "operator", includeAllCompanies: true }, setMeetings, handleError),
       subscribeToAllKnowledgeItems(setKnowledgeItems, handleError),
-      subscribeToRoleplayResults({ userId: "owner", isOwner: true }, setRoleplayResults, handleError),
+      subscribeToRoleplayResults({ userId: "operator", includeAllCompanies: true }, setRoleplayResults, handleError),
       subscribeToFeatureFlags(setFeatureFlags, handleError),
       subscribeToAnnouncements(setAnnouncements, handleError),
       subscribeToAiPrompts(setAiPrompts, handleError),
@@ -2613,7 +2613,6 @@ const companyStatusOptions = [
 ];
 
 const roleOptions = [
-  { value: "owner", label: "owner" },
   { value: "admin", label: "admin" },
   { value: "sales", label: "sales" },
 ];

@@ -4,13 +4,13 @@ import Image from "next/image";
 import { LoginForm } from "@/features/auth/login-form";
 
 type LoginScreenProps = {
-  variant?: "default" | "admin" | "owner";
+  variant?: "default" | "admin" | "operator";
 };
 
 export function LoginScreen({ variant = "default" }: LoginScreenProps) {
   const isAdmin = variant === "admin";
-  const isOwner = variant === "owner";
-  const isPrivileged = isAdmin || isOwner;
+  const isOperatorLogin = variant === "operator";
+  const isPrivileged = isAdmin || isOperatorLogin;
 
   return (
     <main className="flex min-h-screen justify-center bg-white pt-2 pb-3 sm:pt-3 sm:pb-4 md:pt-4 md:pb-5">
@@ -42,13 +42,13 @@ export function LoginScreen({ variant = "default" }: LoginScreenProps) {
                   <ShieldIcon />
                 </span>
                 <h1 className="text-[20px] font-bold tracking-[-0.02em] text-[var(--ink)] sm:text-[22px] md:text-[25px]">
-                  {isOwner ? "運営管理ログイン" : "管理者ログイン"}
+                  {isOperatorLogin ? "運営管理ログイン" : "管理者ログイン"}
                 </h1>
               </div>
               <p className="mt-2.5 text-[12px] leading-6 text-[#4f5663] sm:mt-3 sm:text-[13px] sm:leading-6 md:text-[14px]">
-                {isOwner ? "selmo.運営者専用の管理コンソールにアクセスします。" : "管理者専用のダッシュボードにアクセスします。"}
+                {isOperatorLogin ? "selmo.運営者専用の管理コンソールにアクセスします。" : "管理者専用のダッシュボードにアクセスします。"}
                 <br />
-                {isOwner ? "導入企業、ユーザー、利用状況を横断管理できます。" : "全体の営業状況を可視化・分析できます。"}
+                {isOperatorLogin ? "導入企業、ユーザー、利用状況を横断管理できます。" : "全体の営業状況を可視化・分析できます。"}
               </p>
               <div className="mt-4.5 h-px w-full bg-[#e5e7eb] sm:mt-5" />
             </>

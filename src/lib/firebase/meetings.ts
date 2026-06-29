@@ -27,7 +27,7 @@ import {
   isWithinUploadDurationLimit,
   normalizeUploadDurationLimitMinutes,
 } from "@/lib/upload-duration-limit";
-import type { MeetingOutcome, ProcessingStatus } from "@/types/domain";
+import type { MeetingOutcome, ProcessingStatus, UserRole } from "@/types/domain";
 
 export type MeetingTranscriptionSegment = {
   startSec: number;
@@ -238,9 +238,10 @@ export async function fetchMeeting(meetingId: string) {
 
 export function subscribeToMeetings(
   input: {
-    role: "owner" | "admin" | "sales";
+    role: UserRole;
     userId: string;
     companyId?: string | null;
+    includeAllCompanies?: boolean;
   },
   callback: (meetings: MeetingRecord[]) => void,
   onError?: (error: FirestoreError) => void,
@@ -248,7 +249,7 @@ export function subscribeToMeetings(
   const { firestore } = assertFirebaseClient();
   const meetingsRef = collection(firestore, "meetings");
   const meetingsQuery =
-    input.role === "owner"
+    input.includeAllCompanies
       ? query(meetingsRef)
       : input.role === "admin" && input.companyId
         ? query(meetingsRef, where("companyId", "==", input.companyId))

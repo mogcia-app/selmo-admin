@@ -1,5 +1,5 @@
 import { LoginScreen } from "@/features/auth/login-screen";
 
 export default function HomePage() {
-  return <LoginScreen variant="owner" />;
+  return <LoginScreen variant="operator" />;
 }

@@ -7,15 +7,17 @@ import { useEffect } from "react";
 
 import { useAuth } from "@/features/auth/auth-provider";
 import { canAccessSalesDomain } from "@/lib/firebase/auth";
+import { isOperatorProfile } from "@/lib/operator";
 import type { SalesDomain, UserRole } from "@/types/domain";
 
 type RouteGuardProps = {
   allowedRoles?: UserRole[];
+  requireOperator?: boolean;
   requiredSalesDomain?: SalesDomain;
   children: React.ReactNode;
 };
 
-export function RouteGuard({ allowedRoles, requiredSalesDomain, children }: RouteGuardProps) {
+export function RouteGuard({ allowedRoles, requireOperator = false, requiredSalesDomain, children }: RouteGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, isFirebaseReady, isLoading, profile, missingEnvKeys } = useAuth();
@@ -26,7 +28,12 @@ export function RouteGuard({ allowedRoles, requiredSalesDomain, children }: Rout
     }
 
     if (!isAuthenticated) {
-      router.replace(`${getLoginPath(allowedRoles)}?next=${encodeURIComponent(pathname)}`);
+      router.replace(`${getLoginPath(allowedRoles, requireOperator)}?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
+
+    if (requireOperator && !isOperatorProfile(profile)) {
+      router.replace(getRoleHomePath(profile?.role ?? "sales"));
       return;
     }
 
@@ -37,7 +44,7 @@ export function RouteGuard({ allowedRoles, requiredSalesDomain, children }: Rout
     if (profile && requiredSalesDomain && !canAccessSalesDomain(profile, requiredSalesDomain)) {
       router.replace("/sales/dashboard");
     }
-  }, [allowedRoles, isAuthenticated, isLoading, pathname, profile, requiredSalesDomain, router]);
+  }, [allowedRoles, isAuthenticated, isLoading, pathname, profile, requireOperator, requiredSalesDomain, router]);
 
   if (isLoading) {
     return <AuthLoadingScreen />;
@@ -65,6 +72,15 @@ export function RouteGuard({ allowedRoles, requiredSalesDomain, children }: Rout
     );
   }
 
+  if (requireOperator && !isOperatorProfile(profile)) {
+    return (
+      <GuardMessage
+        title="この画面にはアクセスできません"
+        body="運営管理画面にアクセスできるアカウントではありません。"
+      />
+    );
+  }
+
   if (profile && requiredSalesDomain && !canAccessSalesDomain(profile, requiredSalesDomain)) {
     return (
       <GuardMessage
@@ -78,13 +94,12 @@ export function RouteGuard({ allowedRoles, requiredSalesDomain, children }: Rout
 }
 
 function getRoleHomePath(role: UserRole) {
-  if (role === "owner") return "/owner/dashboard";
   if (role === "admin") return "/admin/dashboard";
   return "/sales/dashboard";
 }
 
-function getLoginPath(allowedRoles?: UserRole[]) {
-  if (allowedRoles?.length === 1 && allowedRoles[0] === "owner") {
+function getLoginPath(allowedRoles?: UserRole[], requireOperator = false) {
+  if (requireOperator) {
     return "/";
   }
 

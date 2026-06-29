@@ -186,7 +186,7 @@ function countCurrentMonthDocs(docs: QueryDocumentSnapshot[]) {
 }
 
 function canUseTeleapoDomain(user: Record<string, unknown>) {
-  if (user.role === "owner" || user.role === "admin") {
+  if (user.role === "admin") {
     return true;
   }
 

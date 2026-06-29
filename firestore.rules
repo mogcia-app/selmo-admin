@@ -18,8 +18,8 @@ service cloud.firestore {
       return currentUser().companyId;
     }
 
-    function isOwnerRole() {
-      return isSignedIn() && currentRole() == "owner";
+    function isOperator() {
+      return isSignedIn() && request.auth.token.email == "marina.ishida@mogcia.com";
     }
 
     function isAdminRole() {
@@ -35,7 +35,7 @@ service cloud.firestore {
     }
 
     function isValidRole(role) {
-      return role == "owner" || role == "admin" || role == "sales";
+      return role == "admin" || role == "sales";
     }
 
     function isValidUserStatus(status) {
@@ -67,15 +67,15 @@ service cloud.firestore {
     }
 
     function canReadCompanyData(companyId) {
-      return isOwnerRole() || sameCompany(companyId);
+      return isOperator() || sameCompany(companyId);
     }
 
     function canAdminCompanyData(companyId) {
-      return isOwnerRole() || (isAdminRole() && sameCompany(companyId));
+      return isOperator() || (isAdminRole() && sameCompany(companyId));
     }
 
     function canUseMeetingDomain() {
-      return isOwnerRole()
+      return isOperator()
         || isAdminRole()
         || !("enabledSalesDomains" in currentUser())
         || !("meeting" in currentUser().enabledSalesDomains)
@@ -83,7 +83,7 @@ service cloud.firestore {
     }
 
     function canUseTeleapoDomain() {
-      return isOwnerRole()
+      return isOperator()
         || isAdminRole()
         || !("enabledSalesDomains" in currentUser())
         || !("teleapo" in currentUser().enabledSalesDomains)
@@ -154,7 +154,6 @@ service cloud.firestore {
     function isAdminUserCoachingUpdate() {
       return isAdminRole()
         && sameCompany(resource.data.companyId)
-        && resource.data.role != "owner"
         && request.resource.data.companyId == resource.data.companyId
         && request.resource.data.role == resource.data.role
         && request.resource.data.email == resource.data.email
@@ -181,7 +180,7 @@ service cloud.firestore {
     }
 
     match /companies/{companyId} {
-      allow read: if isOwnerRole() || sameCompany(companyId);
+      allow read: if isOperator() || sameCompany(companyId);
       allow create: if isSignedIn()
         && request.resource.data.companyName is string
         && isValidCompanyPlan(request.resource.data.plan)
@@ -192,7 +191,7 @@ service cloud.firestore {
           || isValidMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota))
         && (!("uploadDurationLimitMinutes" in request.resource.data) || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes));
       allow update: if (
-          isOwnerRole()
+          isOperator()
           && (!("plan" in request.resource.data) || isValidCompanyPlan(request.resource.data.plan))
           && (!("status" in request.resource.data) || isValidCompanyStatus(request.resource.data.status))
           && (!("monthlyTranscriptionQuota" in request.resource.data)
@@ -212,7 +211,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isOwnerRole()
+      allow read: if isOperator()
         || isSelf(userId)
         || ((isAdminRole() || isSalesRole()) && sameCompany(resource.data.companyId));
       allow create: if (
@@ -224,7 +223,7 @@ service cloud.firestore {
           && isValidUserStatus(request.resource.data.status)
         )
         || (
-          isOwnerRole()
+          isOperator()
           && request.resource.data.uid == userId
           && request.resource.data.companyId is string
           && (request.resource.data.role == "admin" || request.resource.data.role == "sales")
@@ -237,13 +236,12 @@ service cloud.firestore {
           && request.resource.data.role == "sales"
           && isValidUserStatus(request.resource.data.status)
         );
-      allow update: if isOwnerRole()
+      allow update: if isOperator()
         || isAdminUserCoachingUpdate()
         || (
           isAdminRole()
           && sameCompany(resource.data.companyId)
           && request.resource.data.companyId == resource.data.companyId
-          && request.resource.data.role != "owner"
         )
         || (
           isSelf(userId)
@@ -256,13 +254,13 @@ service cloud.firestore {
         || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));
 
       match /knowledgeSearchHistory/{historyId} {
-        allow read: if isOwnerRole() || isSelf(userId);
+        allow read: if isOperator() || isSelf(userId);
         allow write: if isSelf(userId) && canUseKnowledgeDomain();
       }
     }
 
     match /meetings/{meetingId} {
-      allow read: if isOwnerRole()
+      allow read: if isOperator()
         || (
           canReadCompanyData(resource.data.companyId)
           && canUseMeetingDocument(resource.data)
@@ -289,7 +287,7 @@ service cloud.firestore {
     }
 
     match /customers/{customerId} {
-      allow read: if isOwnerRole()
+      allow read: if isOperator()
         || (
           canReadCompanyData(resource.data.companyId)
           && (isAdminRole() || resource.data.assignedUserId == request.auth.uid)
@@ -315,7 +313,7 @@ service cloud.firestore {
     }
 
     match /customerLogs/{logId} {
-      allow read: if isOwnerRole()
+      allow read: if isOperator()
         || (
           canReadCompanyData(resource.data.companyId)
           && (isAdminRole() || resource.data.userId == request.auth.uid || resource.data.createdBy == request.auth.uid)
@@ -338,7 +336,7 @@ service cloud.firestore {
     }
 
     match /meetingOutcomeHistory/{historyId} {
-      allow read, write: if isOwnerRole() || isAdminRole();
+      allow read, write: if isOperator() || isAdminRole();
     }
 
     match /calendarEvents/{eventId} {
@@ -355,18 +353,18 @@ service cloud.firestore {
     }
 
     match /monthlyStats/{month} {
-      allow read: if isOwnerRole() || isAdminRole();
-      allow write: if isOwnerRole() || isAdminRole();
+      allow read: if isOperator() || isAdminRole();
+      allow write: if isOperator() || isAdminRole();
     }
 
     match /userMonthlyStats/{documentId} {
-      allow read: if isOwnerRole() || isAdminRole() || isSelf(resource.data.userId);
-      allow write: if isOwnerRole() || isAdminRole();
+      allow read: if isOperator() || isAdminRole() || isSelf(resource.data.userId);
+      allow write: if isOperator() || isAdminRole();
     }
 
     match /manualChecklists/{checklistId} {
-      allow read: if isOwnerRole() || isAdminRole();
-      allow write: if isOwnerRole() || isAdminRole();
+      allow read: if isOperator() || isAdminRole();
+      allow write: if isOperator() || isAdminRole();
     }
 
     match /salesManuals/{manualId} {
@@ -409,7 +407,7 @@ service cloud.firestore {
           || resource.data.ownerId == request.auth.uid
           || (("sharedWithUserIds" in resource.data) && request.auth.uid in resource.data.sharedWithUserIds)
           || isAdminRole()
-          || isOwnerRole()
+          || isOperator()
         );
       allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid
@@ -456,7 +454,7 @@ service cloud.firestore {
     match /roleplayResults/{resultId} {
       allow read: if canReadCompanyData(resource.data.companyId)
         && canUseRoleplayDomain()
-        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+        && (isOperator() || isAdminRole() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
@@ -474,14 +472,14 @@ service cloud.firestore {
     match /roleplaySessions/{sessionId} {
       allow read: if canReadCompanyData(resource.data.companyId)
         && canUseRoleplayDomain()
-        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+        && (isOperator() || isAdminRole() || resource.data.userId == request.auth.uid);
       allow create, update, delete: if false;
     }
 
     match /roleplayResultComments/{commentId} {
       allow read: if canReadCompanyData(resource.data.companyId)
         && canUseRoleplayDomain()
-        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+        && (isOperator() || isAdminRole() || resource.data.userId == request.auth.uid);
       allow create: if canAdminCompanyData(request.resource.data.companyId)
         && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if false;
@@ -490,7 +488,7 @@ service cloud.firestore {
     match /roleplayAssignments/{assignmentId} {
       allow read: if canReadCompanyData(resource.data.companyId)
         && canUseRoleplayDomain()
-        && (isOwnerRole() || isAdminRole() || resource.data.userId == request.auth.uid);
+        && (isOperator() || isAdminRole() || resource.data.userId == request.auth.uid);
       allow create: if canAdminCompanyData(request.resource.data.companyId)
         && request.resource.data.assignedBy == request.auth.uid;
       allow update: if isSignedIn()
@@ -505,13 +503,13 @@ service cloud.firestore {
     }
 
     match /systemErrors/{errorId} {
-      allow read, update: if isOwnerRole();
-      allow create: if isOwnerRole() || (isSignedIn() && (!("companyId" in request.resource.data) || sameCompany(request.resource.data.companyId)));
+      allow read, update: if isOperator();
+      allow create: if isOperator() || (isSignedIn() && (!("companyId" in request.resource.data) || sameCompany(request.resource.data.companyId)));
       allow delete: if false;
     }
 
     match /loginEvents/{eventId} {
-      allow read: if isOwnerRole();
+      allow read: if isOperator();
       allow create: if request.resource.data.email is string
         && request.resource.data.status in ["success", "failed"]
         && request.resource.data.createdAt is timestamp
@@ -530,7 +528,7 @@ service cloud.firestore {
     }
 
     match /adminAuditLogs/{logId} {
-      allow read: if isOwnerRole()
+      allow read: if isOperator()
         || (
           isAdminRole()
           && (
@@ -538,44 +536,44 @@ service cloud.firestore {
             || sameCompany(resource.data.companyId)
           )
         );
-      allow create: if (isOwnerRole() || isAdminRole())
+      allow create: if (isOperator() || isAdminRole())
         && request.resource.data.actorId == request.auth.uid
         && request.resource.data.action is string
         && request.resource.data.targetType is string
         && request.resource.data.targetId is string
         && request.resource.data.createdAt is timestamp
         && (
-          isOwnerRole()
+          isOperator()
           || sameCompany(request.resource.data.companyId)
         );
       allow update, delete: if false;
     }
 
     match /aiUsageLogs/{logId} {
-      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
-      allow create: if isOwnerRole() || (isSignedIn() && sameCompany(request.resource.data.companyId));
+      allow read: if isOperator() || canReadCompanyData(resource.data.companyId);
+      allow create: if isOperator() || (isSignedIn() && sameCompany(request.resource.data.companyId));
       allow update, delete: if false;
     }
 
     match /aiChargeEvents/{eventId} {
-      allow read, create, update: if isOwnerRole();
+      allow read, create, update: if isOperator();
       allow delete: if false;
     }
 
     match /emailEvents/{eventId} {
-      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
-      allow create, update: if isOwnerRole();
+      allow read: if isOperator() || canReadCompanyData(resource.data.companyId);
+      allow create, update: if isOperator();
       allow delete: if false;
     }
 
     match /appNotifications/{notificationId} {
-      allow read: if isOwnerRole() || (isSignedIn() && sameCompany(resource.data.companyId) && resource.data.userId == request.auth.uid);
+      allow read: if isOperator() || (isSignedIn() && sameCompany(resource.data.companyId) && resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
         && sameCompany(request.resource.data.companyId)
         && (
           request.resource.data.userId == request.auth.uid
           || isAdminRole()
-          || isOwnerRole()
+          || isOperator()
         );
       allow update: if isSignedIn()
         && sameCompany(resource.data.companyId)
@@ -585,8 +583,8 @@ service cloud.firestore {
     }
 
     match /knowledgeSearchEvents/{eventId} {
-      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
-      allow create: if isOwnerRole() || (
+      allow read: if isOperator() || canReadCompanyData(resource.data.companyId);
+      allow create: if isOperator() || (
         isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
@@ -596,8 +594,8 @@ service cloud.firestore {
     }
 
     match /salesActivityEvents/{eventId} {
-      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
-      allow create: if isOwnerRole() || (
+      allow read: if isOperator() || canReadCompanyData(resource.data.companyId);
+      allow create: if isOperator() || (
         isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
@@ -606,13 +604,13 @@ service cloud.firestore {
     }
 
     match /audioProcessingJobs/{jobId} {
-      allow read: if isOwnerRole() || canReadCompanyData(resource.data.companyId);
-      allow create: if isOwnerRole() || (
+      allow read: if isOperator() || canReadCompanyData(resource.data.companyId);
+      allow create: if isOperator() || (
         isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
       );
-      allow update: if isOwnerRole()
+      allow update: if isOperator()
         || canAdminCompanyData(resource.data.companyId)
         || (
           isSignedIn()
@@ -623,17 +621,17 @@ service cloud.firestore {
     }
 
     match /aiPrompts/{promptId} {
-      allow read, create, update: if isOwnerRole();
+      allow read, create, update: if isOperator();
       allow delete: if false;
     }
 
     match /featureFlags/{flagId} {
-      allow read, create, update: if isOwnerRole();
+      allow read, create, update: if isOperator();
       allow delete: if false;
     }
 
     match /announcements/{announcementId} {
-      allow read, create, update: if isOwnerRole();
+      allow read, create, update: if isOperator();
       allow delete: if false;
     }
   }

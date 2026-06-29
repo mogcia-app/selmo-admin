@@ -7,6 +7,7 @@ import { useState } from "react";
 
 import { recordLoginFailure } from "@/lib/firebase/auth";
 import { useAuth } from "@/features/auth/auth-provider";
+import { isOperatorEmail, isOperatorProfile } from "@/lib/operator";
 
 const errorMessageMap: Record<string, string> = {
   "auth/invalid-credential": "メールアドレスまたはパスワードが正しくありません。",
@@ -19,12 +20,10 @@ const appErrorMessageMap: Record<string, string> = {
   "auth/profile-inactive": "このアカウントは現在停止中です。管理者に確認してください。",
 };
 
-const ownerLoginEmail = "marina.ishida@mogcia.com";
-
 export function LoginForm({
   variant = "default",
 }: {
-  variant?: "default" | "admin" | "owner";
+  variant?: "default" | "admin" | "operator";
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -35,8 +34,8 @@ export function LoginForm({
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isAdmin = variant === "admin";
-  const isOwner = variant === "owner";
-  const isPrivileged = isAdmin || isOwner;
+  const isOperatorLogin = variant === "operator";
+  const isPrivileged = isAdmin || isOperatorLogin;
   const formClassName = isPrivileged ? "mt-6 w-full space-y-4 text-left sm:mt-7" : "mt-7 w-full space-y-4.5 text-left sm:mt-8";
 
   const nextPath = searchParams.get("next");
@@ -52,8 +51,8 @@ export function LoginForm({
       return;
     }
 
-    if (isOwner && email.trim().toLowerCase() !== ownerLoginEmail) {
-      void recordLoginFailure({ email, reason: "owner_email_not_allowed", variant });
+    if (isOperatorLogin && !isOperatorEmail(email)) {
+      void recordLoginFailure({ email, reason: "operator_email_not_allowed", variant });
       setErrorMessage("この運営管理画面にログインできるアカウントではありません。");
       return;
     }
@@ -64,30 +63,22 @@ export function LoginForm({
         throw new Error("auth/profile-not-found");
       }
 
-      const nextProfileAuthEmail = nextProfile?.authEmail?.toLowerCase();
-      const nextProfileEmail = nextProfile?.email?.toLowerCase();
-      if (
-        isOwner
-        && (
-          (nextProfileAuthEmail !== ownerLoginEmail && nextProfileEmail !== ownerLoginEmail)
-          || nextProfile.role !== "owner"
-        )
-      ) {
+      if (isOperatorLogin && !isOperatorProfile(nextProfile)) {
         await signOut();
-        void recordLoginFailure({ email, reason: "owner_role_not_allowed", variant });
+        void recordLoginFailure({ email, reason: "operator_email_not_allowed", variant });
         setErrorMessage("この運営管理画面にログインできるアカウントではありません。");
         return;
       }
 
-      const fallbackPath = isOwner
+      const fallbackPath = isOperatorLogin
         ? "/owner/dashboard"
         : isAdmin
           ? "/admin/dashboard"
-        : nextProfile?.role === "owner"
-            ? "/owner/dashboard"
-            : nextProfile?.role === "admin"
-              ? "/admin/dashboard"
-              : "/sales/dashboard";
+        : isOperatorProfile(nextProfile)
+          ? "/owner/dashboard"
+          : nextProfile?.role === "admin"
+            ? "/admin/dashboard"
+            : "/sales/dashboard";
       router.replace(nextPath || fallbackPath);
     } catch (error) {
       if (error instanceof FirebaseError) {
@@ -198,7 +189,7 @@ export function LoginForm({
       >
         {isLoading
           ? "ログイン中..."
-          : isOwner
+          : isOperatorLogin
             ? "運営管理へログイン"
             : isAdmin
             ? "管理者としてログイン"
@@ -219,7 +210,7 @@ export function LoginForm({
         <span>Google でログイン</span>
       </button>
 
-      {isOwner ? null : (
+      {isOperatorLogin ? null : (
         <div className={`flex flex-col gap-2 pt-2 text-[var(--gray)] sm:flex-row sm:items-center sm:justify-between ${isPrivileged ? "text-[12px]" : "text-sm"}`}>
           <Link href="/register" className="transition hover:text-[var(--ink)]">
             新規登録はこちら

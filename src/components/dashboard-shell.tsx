@@ -203,7 +203,7 @@ export function DashboardShell({ children, variant }: DashboardShellProps) {
                     {profile?.name ?? "山田 太郎"}
                   </div>
                   <div className="mt-0.5 text-[12px] text-[#7d8490]">
-                    {profile?.role === "owner" ? "運営者" : profile?.role === "admin" ? "管理者" : "営業担当"}
+                    {profile?.role === "admin" ? "管理者" : "営業担当"}
                   </div>
                 </div>
                 <span className="text-[13px] text-[#9aa1ad]">⌄</span>

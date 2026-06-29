@@ -13,7 +13,7 @@ export default function OwnerLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <RouteGuard allowedRoles={["owner"]}>
+    <RouteGuard requireOperator>
       <DashboardShell variant="owner">{children}</DashboardShell>
     </RouteGuard>
   );

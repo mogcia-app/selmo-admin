@@ -28,6 +28,7 @@ import {
   defaultMonthlyRoleplayQuota,
   defaultMonthlyTranscriptionQuota,
 } from "@/lib/ai-quota";
+import { isOperatorEmail } from "@/lib/operator";
 import { defaultUploadDurationLimitMinutes } from "@/lib/upload-duration-limit";
 import type { EnabledSalesDomains, SalesDomain, UserRole, UserStatus } from "@/types/domain";
 
@@ -120,7 +121,7 @@ export async function signInWithEmail(email: string, password: string, rememberM
 export async function recordLoginFailure(input: {
   email: string;
   reason: string;
-  variant: "default" | "admin" | "owner";
+  variant: "default" | "admin" | "operator";
 }) {
   await recordLoginEvent({
     status: "failed",
@@ -149,9 +150,9 @@ export async function registerUser({
     email,
     password,
   );
-  const resolvedCompanyId = companyId || (role === "owner" ? "selmo-owner" : doc(collection(firestore, "companies")).id);
+  const resolvedCompanyId = companyId || doc(collection(firestore, "companies")).id;
 
-  if (!companyId && role !== "owner") {
+  if (!companyId) {
     await setDoc(doc(firestore, "companies", resolvedCompanyId), {
       companyName: companyName?.trim() || name,
       plan: "standard",
@@ -223,7 +224,7 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
     authEmail?: string;
     name?: string;
     companyId?: string;
-    role?: UserRole;
+    role?: unknown;
     status?: UserStatus;
     workExperienceYears?: number;
     workExperienceMonths?: number;
@@ -233,7 +234,9 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
     lastLoginAt?: { toDate?: () => Date };
   };
 
-  if (!data.role) {
+  const role = readUserRole(data.role, data.authEmail ?? data.email ?? null);
+
+  if (!role) {
     return null;
   }
 
@@ -243,7 +246,7 @@ export async function fetchUserProfile(uid: string): Promise<AppUserProfile | nu
     authEmail: data.authEmail ?? data.email ?? null,
     name: data.name ?? null,
     companyId: data.companyId ?? null,
-    role: data.role,
+    role,
     status: data.status ?? "active",
     enabledSalesDomains: readEnabledSalesDomains(data.enabledSalesDomains),
     workExperienceYears: readNullableNumber(data.workExperienceYears),
@@ -271,7 +274,7 @@ export function subscribeToUserProfiles(
               authEmail?: string;
               name?: string;
               companyId?: string;
-              role?: UserRole;
+              role?: unknown;
               status?: UserStatus;
               workExperienceYears?: number;
               workExperienceMonths?: number;
@@ -281,7 +284,9 @@ export function subscribeToUserProfiles(
               lastLoginAt?: { toDate?: () => Date };
             };
 
-            if (!data.role) return null;
+            const role = readUserRole(data.role, data.authEmail ?? data.email ?? null);
+
+            if (!role) return null;
 
             return {
               uid: userSnapshot.id,
@@ -289,7 +294,7 @@ export function subscribeToUserProfiles(
               authEmail: data.authEmail ?? data.email ?? null,
               name: data.name ?? null,
               companyId: data.companyId ?? null,
-              role: data.role,
+              role,
               status: data.status ?? "active",
               enabledSalesDomains: readEnabledSalesDomains(data.enabledSalesDomains),
               workExperienceYears: readNullableNumber(data.workExperienceYears),
@@ -329,7 +334,7 @@ export function readEnabledSalesDomains(value: unknown): EnabledSalesDomains {
 
 export function canAccessSalesDomain(profile: AppUserProfile | null, domain: SalesDomain) {
   if (!profile) return false;
-  if (profile.role === "admin" || profile.role === "owner") return true;
+  if (profile.role === "admin") return true;
   return profile.enabledSalesDomains[domain];
 }
 
@@ -340,7 +345,7 @@ async function recordLoginEvent(input: {
   role: UserRole | null;
   companyId: string | null;
   reason?: string;
-  variant?: "default" | "admin" | "owner";
+  variant?: "default" | "admin" | "operator";
 }) {
   const { firestore } = assertFirebaseClient();
 
@@ -362,4 +367,10 @@ async function recordLoginEventSafely(input: Parameters<typeof recordLoginEvent>
   } catch (error) {
     console.warn("Failed to record login event.", error);
   }
+}
+
+function readUserRole(value: unknown, email: string | null): UserRole | null {
+  if (value === "admin" || value === "sales") return value;
+  if (value === "owner" && isOperatorEmail(email)) return "admin";
+  return null;
 }

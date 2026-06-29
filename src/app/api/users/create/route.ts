@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isOperatorEmail } from "@/lib/operator";
 import type { EnabledSalesDomains, UserRole } from "@/types/domain";
 
 type CreateUserRequest = {
@@ -43,7 +44,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "認証情報がありません。" }, { status: 401 });
     }
 
-    const actorUid = await lookupUidByIdToken(token);
+    const actorAuth = await lookupUserByIdToken(token);
+    const actorUid = actorAuth.uid;
     const actorDocument = await getFirestoreDocument(`users/${actorUid}`, token);
 
     if (!actorDocument) {
@@ -51,6 +53,7 @@ export async function POST(request: Request) {
     }
 
     const actor = readUserFields(actorDocument);
+    const isOperator = isOperatorEmail(actorAuth.email);
 
     if (actor.status !== "active") {
       return NextResponse.json({ error: "停止中のアカウントでは操作できません。" }, { status: 403 });
@@ -65,11 +68,11 @@ export async function POST(request: Request) {
 
     const { companyId, email, enabledSalesDomains, name, password, role, workExperienceMonths, workExperienceYears } = parsed.value;
 
-    if (actor.role === "admin" && (role !== "sales" || actor.companyId !== companyId)) {
+    if (!isOperator && actor.role === "admin" && (role !== "sales" || actor.companyId !== companyId)) {
       return NextResponse.json({ error: "自社の営業マンのみ追加できます。" }, { status: 403 });
     }
 
-    if (actor.role !== "owner" && actor.role !== "admin") {
+    if (!isOperator && actor.role !== "admin") {
       return NextResponse.json({ error: "ユーザー追加権限がありません。" }, { status: 403 });
     }
 
@@ -109,7 +112,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function lookupUidByIdToken(token: string) {
+async function lookupUserByIdToken(token: string) {
   const response = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
     {
@@ -119,7 +122,7 @@ async function lookupUidByIdToken(token: string) {
     },
   );
   const data = (await response.json()) as {
-    users?: Array<{ localId?: string }>;
+    users?: Array<{ localId?: string; email?: string }>;
     error?: { message?: string };
   };
 
@@ -127,7 +130,10 @@ async function lookupUidByIdToken(token: string) {
     throw new ApiError("認証情報を確認できませんでした。", 401);
   }
 
-  return data.users[0].localId;
+  return {
+    uid: data.users[0].localId,
+    email: data.users[0].email ?? null,
+  };
 }
 
 async function createAuthUser(input: {

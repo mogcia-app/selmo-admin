@@ -19,7 +19,12 @@ service cloud.firestore {
     }
 
     function isOperator() {
-      return isSignedIn() && request.auth.token.email == "marina.ishida@mogcia.com";
+      return isSignedIn()
+        && (
+          request.auth.token.email == "marina.ishida@mogcia.com"
+          || currentUser().email == "marina.ishida@mogcia.com"
+          || currentUser().authEmail == "marina.ishida@mogcia.com"
+        );
     }
 
     function isAdminRole() {

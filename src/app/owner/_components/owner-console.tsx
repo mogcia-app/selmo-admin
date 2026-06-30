@@ -825,11 +825,21 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
     try {
       const nextTranscriptionQuota = parseQuota(monthlyTranscriptionQuota);
       const nextRoleplayQuota = parseQuota(monthlyRoleplayQuota);
-      await persist({
-        monthlyTranscriptionQuota: nextTranscriptionQuota,
-        monthlyRoleplayQuota: nextRoleplayQuota,
-        uploadDurationLimitMinutes,
-      });
+      const nextInput: Parameters<typeof updateCompany>[1] = {};
+
+      if (nextTranscriptionQuota !== row.company.monthlyTranscriptionQuota) {
+        nextInput.monthlyTranscriptionQuota = nextTranscriptionQuota;
+      }
+
+      if (nextRoleplayQuota !== row.company.monthlyRoleplayQuota) {
+        nextInput.monthlyRoleplayQuota = nextRoleplayQuota;
+      }
+
+      if (uploadDurationLimitMinutes !== row.company.uploadDurationLimitMinutes) {
+        nextInput.uploadDurationLimitMinutes = uploadDurationLimitMinutes;
+      }
+
+      await persist(nextInput);
       setIsEditingLimits(false);
     } catch (error) {
       setLimitError(error instanceof Error ? error.message : "利用制限の更新に失敗しました。");

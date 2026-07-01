@@ -141,8 +141,13 @@ export async function createMeeting(input: CreateMeetingInput) {
   const uploadDurationLimitMinutes = await readCompanyUploadDurationLimitMinutes(
     input.companyId,
   );
+  const monthlyTranscriptionQuota = await readCompanyMonthlyTranscriptionQuota(input.companyId);
 
   if (input.audioFile) {
+    if (monthlyTranscriptionQuota === 0) {
+      throw new Error("この会社では音声アップロードを利用できません。");
+    }
+
     if (!isWithinUploadDurationLimit(input.audioDurationSec, uploadDurationLimitMinutes)) {
       throw new Error(getUploadDurationLimitErrorMessage(uploadDurationLimitMinutes));
     }
@@ -223,6 +228,11 @@ export async function createMeeting(input: CreateMeetingInput) {
 export async function fetchCompanyUploadDurationLimitMinutes(companyId?: string | null) {
   const { firestore } = assertFirebaseClient();
   return readCompanyUploadDurationLimitMinutes(companyId, firestore);
+}
+
+export async function fetchCompanyMonthlyTranscriptionQuota(companyId?: string | null) {
+  const { firestore } = assertFirebaseClient();
+  return readCompanyMonthlyTranscriptionQuota(companyId, firestore);
 }
 
 export async function fetchMeeting(meetingId: string) {
@@ -466,6 +476,27 @@ async function readCompanyUploadDurationLimitMinutes(
   const snapshot = await getDoc(doc(firestoreInstance, "companies", companyId));
   const data = snapshot.data() as Record<string, unknown> | undefined;
   return normalizeUploadDurationLimitMinutes(data?.uploadDurationLimitMinutes);
+}
+
+async function readCompanyMonthlyTranscriptionQuota(
+  companyId: string | null | undefined,
+  firestoreInstance = assertFirebaseClient().firestore,
+) {
+  if (!companyId) {
+    return null;
+  }
+
+  const snapshot = await getDoc(doc(firestoreInstance, "companies", companyId));
+  const data = snapshot.data() as Record<string, unknown> | undefined;
+  const quota = data?.monthlyTranscriptionQuota;
+
+  if (quota === null) {
+    return null;
+  }
+
+  return typeof quota === "number" && Number.isFinite(quota)
+    ? Math.max(0, Math.floor(quota))
+    : null;
 }
 
 function uploadWithProgress(

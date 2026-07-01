@@ -137,6 +137,11 @@ service cloud.firestore {
         );
     }
 
+    function canUseMonthlyTranscriptionQuota(data) {
+      return !("monthlyTranscriptionQuota" in companyData(data.companyId))
+        || companyData(data.companyId).monthlyTranscriptionQuota != 0;
+    }
+
     function isKnowledgeCategoryCounterUpdate() {
       return isSignedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["knowledgeCount", "memoCount", "updatedAt"])
@@ -280,7 +285,8 @@ service cloud.firestore {
         && request.resource.data.userId == request.auth.uid
         && sameCompany(request.resource.data.companyId)
         && canUseMeetingDocument(request.resource.data)
-        && canUseUploadDurationLimit(request.resource.data);
+        && canUseUploadDurationLimit(request.resource.data)
+        && canUseMonthlyTranscriptionQuota(request.resource.data);
       allow update: if canAdminCompanyData(resource.data.companyId) || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));
       allow delete: if canAdminCompanyData(resource.data.companyId)
         || (isSelf(resource.data.userId) && sameCompany(resource.data.companyId) && canUseMeetingDocument(resource.data));

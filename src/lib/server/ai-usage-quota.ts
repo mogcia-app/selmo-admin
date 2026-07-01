@@ -71,7 +71,7 @@ export async function assertAiQuotaAvailable(input: {
 
   if (limit !== null) {
     const used = await countMonthlyUsage(input.companyId, input.feature);
-    const isExceeded = input.feature === "transcription" ? used > limit : used >= limit;
+    const isExceeded = used >= limit;
 
     if (isExceeded) {
       const label = input.feature === "transcription" ? "音声文字起こし" : "ロープレ";

@@ -693,24 +693,60 @@ function useOwnerData(): OwnerData {
   const [knowledgeSearchEvents, setKnowledgeSearchEvents] = useState<KnowledgeSearchEventRecord[]>([]);
   const [systemErrors, setSystemErrors] = useState<SystemErrorRecord[]>([]);
   const [audioProcessingJobs, setAudioProcessingJobs] = useState<AudioProcessingJobRecord[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const handleError = (nextError: FirebaseError) => setError(nextError.message);
+    const clearSourceError = (source: string) => {
+      setErrors((current) => {
+        if (!current[source]) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[source];
+        return next;
+      });
+    };
+    const handleError = (source: string) => (nextError: FirebaseError) => {
+      setErrors((current) => ({
+        ...current,
+        [source]: `${source}: ${nextError.message}`,
+      }));
+    };
+    const handleSuccess =
+      <T,>(source: string, callback: (value: T) => void) =>
+      (value: T) => {
+        callback(value);
+        clearSourceError(source);
+      };
     const unsubscribers = [
-      subscribeToCompanies(setCompanies, handleError),
-      subscribeToUserProfiles(setUsers, handleError),
-      subscribeToMeetings({ role: "admin", userId: "operator", includeAllCompanies: true }, setMeetings, handleError),
-      subscribeToAllKnowledgeItems(setKnowledgeItems, handleError),
-      subscribeToRoleplayResults({ userId: "operator", includeAllCompanies: true }, setRoleplayResults, handleError),
-      subscribeToFeatureFlags(setFeatureFlags, handleError),
-      subscribeToAnnouncements(setAnnouncements, handleError),
-      subscribeToAiPrompts(setAiPrompts, handleError),
-      subscribeToAiUsageLogs(setAiUsageLogs, handleError),
-      subscribeToAiChargeEvents(setAiChargeEvents, handleError),
-      subscribeToKnowledgeSearchEvents(setKnowledgeSearchEvents, handleError),
-      subscribeToSystemErrors(setSystemErrors, handleError),
-      subscribeToAudioProcessingJobs(setAudioProcessingJobs, handleError),
+      subscribeToCompanies(handleSuccess("companies", setCompanies), handleError("companies")),
+      subscribeToUserProfiles(handleSuccess("users", setUsers), handleError("users")),
+      subscribeToMeetings(
+        { role: "admin", userId: "operator", includeAllCompanies: true },
+        handleSuccess("meetings", setMeetings),
+        handleError("meetings"),
+      ),
+      subscribeToAllKnowledgeItems(handleSuccess("knowledgeItems", setKnowledgeItems), handleError("knowledgeItems")),
+      subscribeToRoleplayResults(
+        { userId: "operator", includeAllCompanies: true },
+        handleSuccess("roleplayResults", setRoleplayResults),
+        handleError("roleplayResults"),
+      ),
+      subscribeToFeatureFlags(handleSuccess("featureFlags", setFeatureFlags), handleError("featureFlags")),
+      subscribeToAnnouncements(handleSuccess("announcements", setAnnouncements), handleError("announcements")),
+      subscribeToAiPrompts(handleSuccess("aiPrompts", setAiPrompts), handleError("aiPrompts")),
+      subscribeToAiUsageLogs(handleSuccess("aiUsageLogs", setAiUsageLogs), handleError("aiUsageLogs")),
+      subscribeToAiChargeEvents(handleSuccess("aiChargeEvents", setAiChargeEvents), handleError("aiChargeEvents")),
+      subscribeToKnowledgeSearchEvents(
+        handleSuccess("knowledgeSearchEvents", setKnowledgeSearchEvents),
+        handleError("knowledgeSearchEvents"),
+      ),
+      subscribeToSystemErrors(handleSuccess("systemErrors", setSystemErrors), handleError("systemErrors")),
+      subscribeToAudioProcessingJobs(
+        handleSuccess("audioProcessingJobs", setAudioProcessingJobs),
+        handleError("audioProcessingJobs"),
+      ),
     ];
 
     return () => {
@@ -732,7 +768,7 @@ function useOwnerData(): OwnerData {
     knowledgeSearchEvents,
     systemErrors,
     audioProcessingJobs,
-    error,
+    error: Object.values(errors)[0] ?? null,
   };
 }
 

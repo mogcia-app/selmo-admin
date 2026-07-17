@@ -18,12 +18,16 @@ service cloud.firestore {
       return currentUser().companyId;
     }
 
+    function isOperatorEmail(email) {
+      return email is string && email.matches("(?i)^marina\\.ishida@mogcia\\.com$");
+    }
+
     function isOperator() {
       return isSignedIn()
         && (
-          request.auth.token.email == "marina.ishida@mogcia.com"
-          || currentUser().email == "marina.ishida@mogcia.com"
-          || currentUser().authEmail == "marina.ishida@mogcia.com"
+          isOperatorEmail(request.auth.token.email)
+          || isOperatorEmail(currentUser().email)
+          || isOperatorEmail(currentUser().authEmail)
         );
     }
 

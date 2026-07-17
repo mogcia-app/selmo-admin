@@ -8,6 +8,8 @@ export type CompanyPlan = "standard" | "pro" | "enterprise";
 
 export type CompanyStatus = "active" | "inactive" | "suspended";
 
+export type DefaultMeetingInputMode = "audio" | "transcript";
+
 export type UserStatus = "active" | "inactive";
 
 export type MeetingOutcome = "considering" | "won" | "lost";

@@ -36,6 +36,7 @@ type CompanyDocument = {
   monthlyTranscriptionQuota: number; // デフォルト10
   monthlyRoleplayQuota: number; // デフォルト15
   uploadDurationLimitMinutes?: 60 | 120 | 180 | 240; // 未設定時は60分
+  defaultMeetingInputMode?: "audio" | "transcript"; // 未設定時はaudio
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };

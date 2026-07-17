@@ -6,13 +6,25 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/features/auth/auth-provider";
+import {
+  defaultMeetingInputModeOptions,
+  formatDefaultMeetingInputMode,
+} from "@/lib/default-meeting-input-mode";
 import { subscribeToKnowledgeProducts, type KnowledgeProduct } from "@/lib/firebase/knowledge";
-import { createMeeting, fetchCompanyUploadDurationLimitMinutes, subscribeToMeetings, type MeetingRecord } from "@/lib/firebase/meetings";
+import {
+  createMeeting,
+  fetchCompanyDefaultMeetingInputMode,
+  fetchCompanyUploadDurationLimitMinutes,
+  saveMeetingTranscriptionProbe,
+  subscribeToMeetings,
+  type MeetingRecord,
+} from "@/lib/firebase/meetings";
 import {
   defaultUploadDurationLimitMinutes,
   getUploadDurationLimitErrorMessage,
   isWithinUploadDurationLimit,
 } from "@/lib/upload-duration-limit";
+import type { DefaultMeetingInputMode } from "@/types/domain";
 
 const maxOpenAiTranscriptionFileSizeBytes = 25 * 1024 * 1024;
 const supportedAudioTypes = new Set([
@@ -28,6 +40,7 @@ const supportedAudioTypes = new Set([
 export default function MeetingUploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const inputModeTouchedRef = useRef(false);
   const { firebaseError, isFirebaseReady, isLoading, missingEnvKeys, profile } =
     useAuth();
   const [recordedAt, setRecordedAt] = useState(() => toDatetimeLocalValue(new Date()));
@@ -39,6 +52,8 @@ export default function MeetingUploadPage() {
   const [status, setStatus] = useState<"won" | "considering" | "lost">("considering");
   const [location, setLocation] = useState("");
   const [memo, setMemo] = useState("");
+  const [inputMode, setInputMode] = useState<DefaultMeetingInputMode>("audio");
+  const [transcriptText, setTranscriptText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [detectedDurationSec, setDetectedDurationSec] = useState<number | null>(null);
   const [uploadDurationLimitMinutes, setUploadDurationLimitMinutes] = useState(
@@ -48,6 +63,10 @@ export default function MeetingUploadPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    inputModeTouchedRef.current = false;
+  }, [profile?.companyId]);
 
   useEffect(() => {
     if (!isFirebaseReady) {
@@ -85,15 +104,24 @@ export default function MeetingUploadPage() {
     }
 
     let ignore = false;
-    fetchCompanyUploadDurationLimitMinutes(profile?.companyId)
-      .then((limitMinutes) => {
+    Promise.all([
+      fetchCompanyUploadDurationLimitMinutes(profile?.companyId),
+      fetchCompanyDefaultMeetingInputMode(profile?.companyId),
+    ])
+      .then(([limitMinutes, defaultInputMode]) => {
         if (!ignore) {
           setUploadDurationLimitMinutes(limitMinutes);
+          if (!inputModeTouchedRef.current) {
+            setInputMode(defaultInputMode);
+          }
         }
       })
       .catch(() => {
         if (!ignore) {
           setUploadDurationLimitMinutes(defaultUploadDurationLimitMinutes);
+          if (!inputModeTouchedRef.current) {
+            setInputMode("audio");
+          }
         }
       });
 
@@ -125,13 +153,23 @@ export default function MeetingUploadPage() {
       return;
     }
 
-    if (!selectedFile) {
+    if (inputMode === "audio" && !selectedFile) {
       setErrorMessage("文字起こし検証のため、音声ファイルを選択してください。");
       return;
     }
 
-    if (!isWithinUploadDurationLimit(detectedDurationSec, uploadDurationLimitMinutes)) {
+    if (
+      inputMode === "audio" &&
+      !isWithinUploadDurationLimit(detectedDurationSec, uploadDurationLimitMinutes)
+    ) {
       setErrorMessage(getUploadDurationLimitErrorMessage(uploadDurationLimitMinutes));
+      return;
+    }
+
+    const pastedTranscriptText = transcriptText.trim();
+
+    if (inputMode !== "audio" && !pastedTranscriptText) {
+      setErrorMessage("文字起こしを貼り付けてください。");
       return;
     }
 
@@ -153,10 +191,21 @@ export default function MeetingUploadPage() {
         location: location.trim(),
         memo: memo.trim(),
         status,
-        audioFile: selectedFile,
-        audioDurationSec: detectedDurationSec,
-        onUploadProgress: setUploadProgress,
+        audioFile: inputMode === "audio" ? selectedFile : null,
+        audioDurationSec: inputMode === "audio" ? detectedDurationSec : null,
+        onUploadProgress: inputMode === "audio" ? setUploadProgress : undefined,
       });
+
+      if (inputMode !== "audio") {
+        await saveMeetingTranscriptionProbe(meetingId, {
+          status: "completed",
+          model: inputMode,
+          text: pastedTranscriptText,
+          segments: null,
+          segmentCount: null,
+          processingStatus: "completed",
+        });
+      }
 
       setSuccessMessage(`打ち合わせ情報を保存しました。処理状況は一覧で確認できます。ID: ${meetingId}`);
       router.push("/meetings");
@@ -200,83 +249,96 @@ export default function MeetingUploadPage() {
 
       <section className="grid gap-5 xl:grid-cols-[1.02fr_0.98fr]">
         <section className="rounded-[24px] border border-[#eceef4] bg-white p-5 shadow-[0_10px_28px_rgba(17,24,39,0.05)]">
+          <div className="mb-5">
+            <InputModeTabs
+              active={inputMode}
+              onChange={(value) => {
+                inputModeTouchedRef.current = true;
+                setInputMode(value);
+              }}
+            />
+          </div>
           <div className="mb-5 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff8e4] text-[#f0b400]">
               <UploadGlyph />
             </div>
             <div>
               <h2 className="text-[24px] font-bold tracking-[-0.03em] text-[#171717]">
-                音声ファイル
+                {formatDefaultMeetingInputMode(inputMode)}
               </h2>
               <p className="text-[14px] text-[#7a808c]">
-                mp3 / wav / m4a、1ファイル{uploadDurationLimitMinutes}分まで
+                {inputMode === "audio"
+                  ? `mp3 / wav / m4a、1ファイル${uploadDurationLimitMinutes}分まで`
+                  : defaultMeetingInputModeOptions.find((option) => option.value === inputMode)?.description}
               </p>
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-dashed border-[#dfe3ea] bg-[#fafafa] px-6 py-9 text-center">
-            <Image
-              src="/uplod.png"
-              alt="selmo"
-              width={124}
-              height={124}
-              className="mx-auto h-[124px] w-[124px] object-contain"
-            />
-            <div className="mt-4 text-[22px] font-bold tracking-[-0.03em] text-[#171717]">
-              音声ファイルをアップロード
-            </div>
-            <div className="mt-2 text-[14px] leading-7 text-[#7a808c]">
-              ドラッグ&ドロップ、またはクリックしてファイルを選択
-            </div>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-6 rounded-[14px] bg-[#171717] px-5 py-3 text-[14px] font-medium text-white transition hover:bg-[#2a2d33]"
-            >
-              ファイルを選択
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4,audio/x-m4a"
-              className="hidden"
-              onChange={async (event) => {
-                const file = event.target.files?.[0] ?? null;
-                setErrorMessage(null);
-                setSuccessMessage(null);
-                setUploadProgress(0);
-                setSelectedFile(null);
-                setDetectedDurationSec(null);
-
-                if (!file) {
-                  return;
-                }
-
-                if (!isSupportedAudioFile(file)) {
-                  setErrorMessage(
-                    "対応している形式は mp3 / wav / m4a です。別形式の場合は変換してから再度お試しください。",
-                  );
-                  return;
-                }
-
-                setSelectedFile(file);
-
-                try {
-                  const durationSec = await readAudioDuration(file);
-                  setDetectedDurationSec(durationSec);
-                  if (!isWithinUploadDurationLimit(durationSec, uploadDurationLimitMinutes)) {
+          {inputMode === "audio" ? (
+            <>
+              <div className="rounded-[22px] border border-dashed border-[#dfe3ea] bg-[#fafafa] px-6 py-9 text-center">
+                <Image
+                  src="/uplod.png"
+                  alt="selmo"
+                  width={124}
+                  height={124}
+                  className="mx-auto h-[124px] w-[124px] object-contain"
+                />
+                <div className="mt-4 text-[22px] font-bold tracking-[-0.03em] text-[#171717]">
+                  音声ファイルをアップロード
+                </div>
+                <div className="mt-2 text-[14px] leading-7 text-[#7a808c]">
+                  ドラッグ&ドロップ、またはクリックしてファイルを選択
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-6 rounded-[14px] bg-[#171717] px-5 py-3 text-[14px] font-medium text-white transition hover:bg-[#2a2d33]"
+                >
+                  ファイルを選択
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4,audio/x-m4a"
+                  className="hidden"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                    setUploadProgress(0);
                     setSelectedFile(null);
-                    event.target.value = "";
-                    setErrorMessage(getUploadDurationLimitErrorMessage(uploadDurationLimitMinutes));
-                  }
-                } catch {
-                  setErrorMessage(
-                    "ファイルは選択できましたが、音声時間を取得できませんでした。別の音声ファイルで再度お試しください。",
-                  );
-                }
-              }}
-            />
-          </div>
+                    setDetectedDurationSec(null);
+
+                    if (!file) {
+                      return;
+                    }
+
+                    if (!isSupportedAudioFile(file)) {
+                      setErrorMessage(
+                        "対応している形式は mp3 / wav / m4a です。別形式の場合は変換してから再度お試しください。",
+                      );
+                      return;
+                    }
+
+                    setSelectedFile(file);
+
+                    try {
+                      const durationSec = await readAudioDuration(file);
+                      setDetectedDurationSec(durationSec);
+                      if (!isWithinUploadDurationLimit(durationSec, uploadDurationLimitMinutes)) {
+                        setSelectedFile(null);
+                        event.target.value = "";
+                        setErrorMessage(getUploadDurationLimitErrorMessage(uploadDurationLimitMinutes));
+                      }
+                    } catch {
+                      setErrorMessage(
+                        "ファイルは選択できましたが、音声時間を取得できませんでした。別の音声ファイルで再度お試しください。",
+                      );
+                    }
+                  }}
+                />
+              </div>
 
           {selectedFile ? (
             <div className="mt-5 rounded-[18px] border border-[#eceef4] bg-[#fafbfc] px-5 py-4">
@@ -297,15 +359,34 @@ export default function MeetingUploadPage() {
               </div>
             </div>
           ) : null}
+            </>
+          ) : (
+            <div className="rounded-[22px] border border-[#dfe3ea] bg-[#fafafa] px-5 py-5">
+              <textarea
+                className={`${inputClassName} min-h-[280px] resize-y leading-7`}
+                placeholder="ZoomやGoogle Meetなどの文字起こしを貼り付け"
+                value={transcriptText}
+                onChange={(event) => {
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  setTranscriptText(event.target.value);
+                }}
+              />
+            </div>
+          )}
 
           <div className="mt-5 rounded-[18px] border border-[#eceef4] bg-white px-5 py-4">
             <div className="text-[13px] font-semibold text-[#505866]">処理ステータス</div>
             <div className="mt-2 text-[14px] leading-6 text-[#7a808c]">
               {isSubmitting
-                ? "音声をアップロード中です。完了後、一覧で処理状況を確認できます。"
-                : selectedFile
+                ? inputMode === "audio"
+                  ? "音声をアップロード中です。完了後、一覧で処理状況を確認できます。"
+                  : "文字起こしを登録中です。完了後、一覧で確認できます。"
+                : inputMode === "audio" && selectedFile
                   ? "アップロード前です。保存すると処理待ちとして一覧に表示されます。"
-                  : "音声ファイルを選択してください。"}
+                  : inputMode === "audio"
+                    ? "音声ファイルを選択してください。"
+                    : "文字起こしを貼り付けてください。"}
             </div>
           </div>
 
@@ -441,10 +522,20 @@ export default function MeetingUploadPage() {
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || isLoading || !selectedFile || detectedDurationSec === null}
+                disabled={
+                  isSubmitting ||
+                  isLoading ||
+                  (inputMode === "audio" && (!selectedFile || detectedDurationSec === null))
+                }
                 className="rounded-[14px] bg-[#171717] px-5 py-3 text-[14px] font-medium text-white transition hover:bg-[#2a2d33] disabled:cursor-not-allowed disabled:bg-[#9ca3af]"
               >
-                {isSubmitting ? `アップロード中... ${uploadProgress}%` : "音声をアップロード"}
+                {isSubmitting
+                  ? inputMode === "audio"
+                    ? `アップロード中... ${uploadProgress}%`
+                    : "登録中..."
+                  : inputMode === "audio"
+                    ? "音声をアップロード"
+                    : "文字起こしを登録"}
               </button>
             </div>
           </form>
@@ -532,6 +623,36 @@ function Segmented({
               isActive
                 ? "border-[#171717] bg-[#171717] text-white"
                 : "border-[#e6e8ee] bg-white text-[#303544] hover:bg-[#fafafa]"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function InputModeTabs({
+  active,
+  onChange,
+}: {
+  active: DefaultMeetingInputMode;
+  onChange: (value: DefaultMeetingInputMode) => void;
+}) {
+  return (
+    <div className="grid gap-2 rounded-[18px] bg-[#f5f6f8] p-1 md:grid-cols-2">
+      {defaultMeetingInputModeOptions.map((option) => {
+        const isActive = option.value === active;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`rounded-[14px] px-3 py-3 text-left text-[13px] font-semibold transition ${
+              isActive
+                ? "bg-white text-[#171717] shadow-[0_8px_18px_rgba(17,24,39,0.08)]"
+                : "text-[#6d7482] hover:bg-white/70 hover:text-[#303544]"
             }`}
           >
             {option.label}

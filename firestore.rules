@@ -59,6 +59,10 @@ service cloud.firestore {
       return value == 60 || value == 120 || value == 180 || value == 240;
     }
 
+    function isValidDefaultMeetingInputMode(value) {
+      return value == "audio" || value == "transcript";
+    }
+
     function isValidMonthlyAiQuota(quota) {
       return quota is number && quota >= 0;
     }
@@ -199,7 +203,8 @@ service cloud.firestore {
           || isValidMonthlyAiQuota(request.resource.data.monthlyTranscriptionQuota))
         && (!("monthlyRoleplayQuota" in request.resource.data)
           || isValidMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota))
-        && (!("uploadDurationLimitMinutes" in request.resource.data) || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes));
+        && (!("uploadDurationLimitMinutes" in request.resource.data) || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes))
+        && (!("defaultMeetingInputMode" in request.resource.data) || isValidDefaultMeetingInputMode(request.resource.data.defaultMeetingInputMode));
       allow update: if (
           isOperator()
           && (!("plan" in request.resource.data) || isValidCompanyPlan(request.resource.data.plan))
@@ -209,6 +214,7 @@ service cloud.firestore {
           && (!("monthlyRoleplayQuota" in request.resource.data)
             || isValidOptionalMonthlyAiQuota(request.resource.data.monthlyRoleplayQuota))
           && (!("uploadDurationLimitMinutes" in request.resource.data) || isValidUploadDurationLimitMinutes(request.resource.data.uploadDurationLimitMinutes))
+          && (!("defaultMeetingInputMode" in request.resource.data) || isValidDefaultMeetingInputMode(request.resource.data.defaultMeetingInputMode))
         )
         || (
           isAdminRole()

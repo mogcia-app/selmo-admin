@@ -11,6 +11,10 @@ import {
   defaultMonthlyTranscriptionQuota,
   getTotalMonthlyAiQuota,
 } from "@/lib/ai-quota";
+import {
+  defaultMeetingInputModeOptions,
+  formatDefaultMeetingInputMode,
+} from "@/lib/default-meeting-input-mode";
 import { subscribeToAllKnowledgeItems, type KnowledgeItem } from "@/lib/firebase/knowledge";
 import { subscribeToMeetings, type MeetingRecord } from "@/lib/firebase/meetings";
 import {
@@ -47,7 +51,7 @@ import {
   uploadDurationLimitOptions,
   type UploadDurationLimitMinutes,
 } from "@/lib/upload-duration-limit";
-import type { CompanyPlan, CompanyStatus, UserRole, UserStatus } from "@/types/domain";
+import type { CompanyPlan, CompanyStatus, DefaultMeetingInputMode, UserRole, UserStatus } from "@/types/domain";
 
 type OwnerData = {
   companies: CompanyRecord[];
@@ -108,6 +112,8 @@ export function OwnerCompanies() {
   );
   const [uploadDurationLimitMinutes, setUploadDurationLimitMinutes] =
     useState<UploadDurationLimitMinutes>(defaultUploadDurationLimitMinutes);
+  const [defaultMeetingInputMode, setDefaultMeetingInputMode] =
+    useState<DefaultMeetingInputMode>("audio");
   const [isSaving, setIsSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -124,6 +130,7 @@ export function OwnerCompanies() {
         monthlyTranscriptionQuota: parseQuota(monthlyTranscriptionQuota) ?? defaultMonthlyTranscriptionQuota,
         monthlyRoleplayQuota: parseQuota(monthlyRoleplayQuota) ?? defaultMonthlyRoleplayQuota,
         uploadDurationLimitMinutes,
+        defaultMeetingInputMode,
       });
       setCompanyName("");
       setPlan("standard");
@@ -131,6 +138,7 @@ export function OwnerCompanies() {
       setMonthlyTranscriptionQuota(String(defaultMonthlyTranscriptionQuota));
       setMonthlyRoleplayQuota(String(defaultMonthlyRoleplayQuota));
       setUploadDurationLimitMinutes(defaultUploadDurationLimitMinutes);
+      setDefaultMeetingInputMode("audio");
       setDialogOpen(false);
     } finally {
       setIsSaving(false);
@@ -157,13 +165,14 @@ export function OwnerCompanies() {
       <section className="mt-7">
         <Panel title="会社一覧">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] border-collapse">
+            <table className="w-full min-w-[1040px] border-collapse">
               <thead>
               <tr className="border-b border-[#e6e9ef] text-left text-[12px] font-bold text-[#7a808c]">
                 <th className="px-3 py-3">会社</th>
                 <th className="px-3 py-3">プラン</th>
                 <th className="px-3 py-3">AI回数</th>
                 <th className="px-3 py-3">1ファイル上限</th>
+                <th className="px-3 py-3">デフォルト取り込み方法</th>
                 <th className="px-3 py-3">月額料金</th>
                 <th className="px-3 py-3">契約開始日</th>
                 <th className="px-3 py-3">ステータス</th>
@@ -222,6 +231,10 @@ export function OwnerCompanies() {
                 onChange={(value) => setUploadDurationLimitMinutes(Number(value) as UploadDurationLimitMinutes)}
                 options={uploadDurationLimitSelectOptions}
               />
+              <DefaultMeetingInputModeSelect
+                value={defaultMeetingInputMode}
+                onChange={setDefaultMeetingInputMode}
+              />
               <Select label="ステータス" value={status} onChange={(value) => setStatus(value as CompanyStatus)} options={companyStatusOptions} />
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setDialogOpen(false)} className="rounded-[8px] border border-[#eadfbc] bg-white px-4 py-3 text-[13px] font-bold text-[#343b48] transition hover:bg-[#fff8e4]">
@@ -270,6 +283,7 @@ export function OwnerCompanyDetail({ companyId }: { companyId: string }) {
         <Metric label="文字起こし上限" value={formatQuota(row.company.monthlyTranscriptionQuota)} note="月間回数" />
         <Metric label="ロープレ上限" value={formatQuota(row.company.monthlyRoleplayQuota)} note="月間回数" />
         <Metric label="1ファイル上限" value={formatUploadDurationLimit(row.company.uploadDurationLimitMinutes)} note="companies.uploadDurationLimitMinutes" />
+        <Metric label="デフォルト取り込み方法" value={formatDefaultMeetingInputMode(row.company.defaultMeetingInputMode)} note="companies.defaultMeetingInputMode" />
         <Metric label="契約ステータス" value={row.company.status} note="companies.status" />
         <Metric label="管理者数" value={`${admins.length}名`} note="role: admin" />
         <Metric label="営業マン数" value={`${sales.length}名`} note="role: sales" />
@@ -286,6 +300,7 @@ export function OwnerCompanyDetail({ companyId }: { companyId: string }) {
               ["文字起こし上限", formatQuota(row.company.monthlyTranscriptionQuota)],
               ["ロープレ上限", formatQuota(row.company.monthlyRoleplayQuota)],
               ["1ファイル上限", formatUploadDurationLimit(row.company.uploadDurationLimitMinutes)],
+              ["デフォルト取り込み方法", formatDefaultMeetingInputMode(row.company.defaultMeetingInputMode)],
               ["月額料金", formatYenOrPending(row.company.monthlyFee)],
               ["契約開始日", formatDate(row.company.contractStartDate)],
               ["契約ステータス", row.company.status],
@@ -787,6 +802,8 @@ function useCompanyUsageRows(data: OwnerData) {
 function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[number] }) {
   const [plan, setPlan] = useState<CompanyPlan>(row.company.plan);
   const [status, setStatus] = useState<CompanyStatus>(row.company.status);
+  const [defaultMeetingInputMode, setDefaultMeetingInputMode] =
+    useState<DefaultMeetingInputMode>(row.company.defaultMeetingInputMode);
   const [uploadDurationLimitMinutes, setUploadDurationLimitMinutes] =
     useState<UploadDurationLimitMinutes>(row.company.uploadDurationLimitMinutes);
   const [monthlyTranscriptionQuota, setMonthlyTranscriptionQuota] = useState(row.company.monthlyTranscriptionQuota?.toString() ?? "");
@@ -796,6 +813,7 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
   const [isEditingLimits, setIsEditingLimits] = useState(false);
   const [isUpdatingLimits, setIsUpdatingLimits] = useState(false);
   const [limitError, setLimitError] = useState<string | null>(null);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
 
   const resetLimitDraft = useCallback(() => {
     setUploadDurationLimitMinutes(row.company.uploadDurationLimitMinutes);
@@ -807,15 +825,29 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
   useEffect(() => {
     setPlan(row.company.plan);
     setStatus(row.company.status);
+    setDefaultMeetingInputMode(row.company.defaultMeetingInputMode);
     setMonthlyFee(row.company.monthlyFee?.toString() ?? "");
     setContractStartDate(formatDateInput(row.company.contractStartDate));
     if (!isEditingLimits) {
       resetLimitDraft();
     }
-  }, [isEditingLimits, resetLimitDraft, row.company.contractStartDate, row.company.monthlyFee, row.company.plan, row.company.status]);
+  }, [isEditingLimits, resetLimitDraft, row.company.contractStartDate, row.company.defaultMeetingInputMode, row.company.monthlyFee, row.company.plan, row.company.status]);
 
   async function persist(input: Parameters<typeof updateCompany>[1]) {
     await updateCompany(row.company.id, input);
+  }
+
+  async function updateDefaultMeetingInputMode(value: DefaultMeetingInputMode) {
+    setDefaultMeetingInputMode(value);
+    setSettingsMessage(null);
+
+    try {
+      await persist({ defaultMeetingInputMode: value });
+      setSettingsMessage("設定を保存しました。次回以降のアップロード画面に反映されます。");
+    } catch {
+      setDefaultMeetingInputMode(row.company.defaultMeetingInputMode);
+      setSettingsMessage("設定の保存に失敗しました。");
+    }
   }
 
   async function updateLimits() {
@@ -927,6 +959,24 @@ function CompanyRow({ row }: { row: ReturnType<typeof useCompanyUsageRows>[numbe
           options={uploadDurationLimitSelectOptions}
           disabled={!isEditingLimits || isUpdatingLimits}
         />
+      </td>
+      <td className="px-3 py-4">
+        <div className="grid min-w-[220px] gap-2">
+          <InlineSelect
+            value={defaultMeetingInputMode}
+            onChange={(value) => void updateDefaultMeetingInputMode(value as DefaultMeetingInputMode)}
+            options={defaultMeetingInputModeSelectOptions}
+            full
+          />
+          <div className="text-[11px] leading-5 text-[#8a909b]">
+            営業メンバーが商談・テレアポを登録するときに、最初に開く入力方法を選択します。
+          </div>
+          {settingsMessage ? (
+            <div className={`text-[11px] font-bold ${settingsMessage.includes("失敗") ? "text-red-700" : "text-[#2f8f56]"}`}>
+              {settingsMessage}
+            </div>
+          ) : null}
+        </div>
       </td>
       <td className="px-3 py-4 text-[#343b48]">
         <input
@@ -2121,6 +2171,38 @@ function Select({ label, value, onChange, options, disabled = false }: { label: 
   );
 }
 
+function DefaultMeetingInputModeSelect({
+  value,
+  onChange,
+}: {
+  value: DefaultMeetingInputMode;
+  onChange: (value: DefaultMeetingInputMode) => void;
+}) {
+  const selectedOption = defaultMeetingInputModeOptions.find((option) => option.value === value);
+
+  return (
+    <label className="block">
+      <span className="mb-2 block text-[12px] font-bold text-[#343b48]">
+        デフォルト取り込み方法
+      </span>
+      <span className="mb-2 block text-[12px] leading-5 text-[#7a808c]">
+        営業メンバーが商談・テレアポを登録するときに、最初に開く入力方法を選択します。
+      </span>
+      <InlineSelect
+        value={value}
+        onChange={(nextValue) => onChange(nextValue as DefaultMeetingInputMode)}
+        options={defaultMeetingInputModeSelectOptions}
+        full
+      />
+      {selectedOption ? (
+        <span className="mt-2 block text-[12px] leading-5 text-[#7a808c]">
+          {selectedOption.description}
+        </span>
+      ) : null}
+    </label>
+  );
+}
+
 function InlineSelect({ value, onChange, options, full = false, disabled = false }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; full?: boolean; disabled?: boolean }) {
   return (
     <select
@@ -2892,6 +2974,11 @@ const planOptions = [
 const uploadDurationLimitSelectOptions = uploadDurationLimitOptions.map((minutes) => ({
   value: String(minutes),
   label: `${minutes}分`,
+}));
+
+const defaultMeetingInputModeSelectOptions = defaultMeetingInputModeOptions.map((option) => ({
+  value: option.value,
+  label: option.label,
 }));
 
 const companyStatusOptions = [

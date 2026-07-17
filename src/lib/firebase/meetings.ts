@@ -21,13 +21,14 @@ import {
   type UploadMetadata,
 } from "firebase/storage";
 
+import { readDefaultMeetingInputMode } from "@/lib/default-meeting-input-mode";
 import { assertFirebaseClient } from "@/lib/firebase/client";
 import {
   getUploadDurationLimitErrorMessage,
   isWithinUploadDurationLimit,
   normalizeUploadDurationLimitMinutes,
 } from "@/lib/upload-duration-limit";
-import type { MeetingOutcome, ProcessingStatus, UserRole } from "@/types/domain";
+import type { DefaultMeetingInputMode, MeetingOutcome, ProcessingStatus, UserRole } from "@/types/domain";
 
 export type MeetingTranscriptionSegment = {
   startSec: number;
@@ -228,6 +229,19 @@ export async function createMeeting(input: CreateMeetingInput) {
 export async function fetchCompanyUploadDurationLimitMinutes(companyId?: string | null) {
   const { firestore } = assertFirebaseClient();
   return readCompanyUploadDurationLimitMinutes(companyId, firestore);
+}
+
+export async function fetchCompanyDefaultMeetingInputMode(
+  companyId?: string | null,
+): Promise<DefaultMeetingInputMode> {
+  const { firestore } = assertFirebaseClient();
+
+  if (!companyId) {
+    return "audio";
+  }
+
+  const snapshot = await getDoc(doc(firestore, "companies", companyId));
+  return readDefaultMeetingInputMode(snapshot.data()?.defaultMeetingInputMode);
 }
 
 export async function fetchCompanyMonthlyTranscriptionQuota(companyId?: string | null) {

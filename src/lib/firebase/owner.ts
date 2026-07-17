@@ -22,12 +22,13 @@ import {
   defaultMonthlyRoleplayQuota,
   defaultMonthlyTranscriptionQuota,
 } from "@/lib/ai-quota";
+import { readDefaultMeetingInputMode } from "@/lib/default-meeting-input-mode";
 import {
   defaultUploadDurationLimitMinutes,
   normalizeUploadDurationLimitMinutes,
   type UploadDurationLimitMinutes,
 } from "@/lib/upload-duration-limit";
-import type { CompanyPlan, CompanyStatus, UserRole, UserStatus } from "@/types/domain";
+import type { CompanyPlan, CompanyStatus, DefaultMeetingInputMode, UserRole, UserStatus } from "@/types/domain";
 
 export type CompanyRecord = {
   id: string;
@@ -37,6 +38,7 @@ export type CompanyRecord = {
   monthlyTranscriptionQuota: number | null;
   monthlyRoleplayQuota: number | null;
   uploadDurationLimitMinutes: UploadDurationLimitMinutes;
+  defaultMeetingInputMode: DefaultMeetingInputMode;
   monthlyFee: number | null;
   billingCurrency: "JPY";
   contractStartDate: Date | null;
@@ -174,6 +176,7 @@ export async function createCompany(input: {
   monthlyTranscriptionQuota?: number | null;
   monthlyRoleplayQuota?: number | null;
   uploadDurationLimitMinutes?: number | null;
+  defaultMeetingInputMode?: DefaultMeetingInputMode;
 }) {
   const { firestore } = assertFirebaseClient();
   const companyRef = doc(collection(firestore, "companies"));
@@ -186,6 +189,7 @@ export async function createCompany(input: {
     monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultMonthlyRoleplayQuota,
     uploadDurationLimitMinutes:
       normalizeUploadDurationLimitMinutes(input.uploadDurationLimitMinutes),
+    defaultMeetingInputMode: readDefaultMeetingInputMode(input.defaultMeetingInputMode),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -203,6 +207,7 @@ export async function createCompany(input: {
       monthlyRoleplayQuota: input.monthlyRoleplayQuota ?? defaultMonthlyRoleplayQuota,
       uploadDurationLimitMinutes:
         normalizeUploadDurationLimitMinutes(input.uploadDurationLimitMinutes),
+      defaultMeetingInputMode: readDefaultMeetingInputMode(input.defaultMeetingInputMode),
     },
   });
 
@@ -211,7 +216,7 @@ export async function createCompany(input: {
 
 export async function updateCompany(
   companyId: string,
-  input: Partial<Pick<CompanyRecord, "companyName" | "plan" | "status" | "monthlyTranscriptionQuota" | "monthlyRoleplayQuota" | "uploadDurationLimitMinutes" | "monthlyFee" | "billingCurrency" | "contractStartDate">>,
+  input: Partial<Pick<CompanyRecord, "companyName" | "plan" | "status" | "monthlyTranscriptionQuota" | "monthlyRoleplayQuota" | "uploadDurationLimitMinutes" | "defaultMeetingInputMode" | "monthlyFee" | "billingCurrency" | "contractStartDate">>,
 ) {
   const { firestore } = assertFirebaseClient();
 
@@ -504,6 +509,7 @@ function mapCompany(snapshot: QueryDocumentSnapshot): CompanyRecord {
     uploadDurationLimitMinutes: normalizeUploadDurationLimitMinutes(
       data.uploadDurationLimitMinutes ?? defaultUploadDurationLimitMinutes,
     ),
+    defaultMeetingInputMode: readDefaultMeetingInputMode(data.defaultMeetingInputMode),
     monthlyFee: readNullableNumber(data.monthlyFee),
     billingCurrency: "JPY",
     contractStartDate: readDate(data.contractStartDate) ?? readDate(data.createdAt),

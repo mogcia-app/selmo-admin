@@ -46,7 +46,7 @@ export function LoginScreen({ variant = "default" }: LoginScreenProps) {
                 </h1>
               </div>
               <p className="mt-2.5 text-[12px] leading-6 text-[#4f5663] sm:mt-3 sm:text-[13px] sm:leading-6 md:text-[14px]">
-                {isOperatorLogin ? "selmo.運営者専用の管理コンソールにアクセスします。" : "管理者専用のダッシュボードにアクセスします。"}
+                {isOperatorLogin ? "selmo.運営管理コンソールにアクセスします。" : "管理者ダッシュボードにアクセスします。"}
                 <br />
                 {isOperatorLogin ? "導入企業、ユーザー、利用状況を横断管理できます。" : "全体の営業状況を可視化・分析できます。"}
               </p>
